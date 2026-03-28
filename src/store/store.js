@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { insforge } from '../lib/insforge';
+import { playNotificationSound } from '../utils/sound';
 
 const mockProducts = [
   { id: '1', name: 'Neon Mojito', category: 'Cocktails', price: 12, stock: 15, minStock: 5, imageUrl: 'https://images.unsplash.com/photo-1551538827-9c037cb4f32a?w=400&h=400&fit=crop' },
@@ -92,15 +93,19 @@ export const useStore = create((set, get) => ({
       // Real-time synchronization
       insforge.channel('any')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
-          const newOrder = mapFromDb(payload.new, orderMapping);
           if (payload.eventType === 'INSERT') {
+            const newOrder = mapFromDb(payload.new, orderMapping);
             set((state) => ({ 
               orders: [newOrder, ...state.orders],
-              hasNewWebOrder: true 
+              hasNewWebOrder: newOrder.status === 'pending'
             }));
+            if (newOrder.status === 'pending') {
+              playNotificationSound();
+            }
           } else if (payload.eventType === 'UPDATE') {
+            const updatedOrder = mapFromDb(payload.new, orderMapping);
             set((state) => ({ 
-              orders: state.orders.map(o => o.id === newOrder.id ? newOrder : o) 
+              orders: state.orders.map(o => o.id === updatedOrder.id ? updatedOrder : o) 
             }));
           }
         })
@@ -316,6 +321,89 @@ export const useStore = create((set, get) => ({
     ]);
   },
 
+  acceptWebOrder: async (orderId, paymentMethod = 'Espèces') => {
+    const { orders, products, currentCycle, tables, movements } = get();
+    const order = orders.find(o => o.id === orderId);
+    if (!order || order.status !== 'pending') return;
+
+    const itemsForOrder = [];
+    const updatedProducts = products.map(p => {
+      const orderItem = order.items.find(item => item.product.id === p.id);
+      if (orderItem) {
+        let remainingToDeduct = orderItem.quantity;
+        let totalCostForThisItem = 0;
+        let newCostBatches = [...(p.costBatches || [])];
+        
+        while (remainingToDeduct > 0 && newCostBatches.length > 0) {
+          if (newCostBatches[0].qty <= remainingToDeduct) {
+            totalCostForThisItem += newCostBatches[0].qty * newCostBatches[0].cost;
+            remainingToDeduct -= newCostBatches[0].qty;
+            newCostBatches.shift();
+          } else {
+            totalCostForThisItem += remainingToDeduct * newCostBatches[0].cost;
+            newCostBatches[0] = { ...newCostBatches[0], qty: newCostBatches[0].qty - remainingToDeduct };
+            remainingToDeduct = 0;
+          }
+        }
+        
+        const avgCostPrice = orderItem.quantity > 0 ? totalCostForThisItem / orderItem.quantity : 0;
+        itemsForOrder.push({ ...orderItem, costPrice: avgCostPrice });
+        return { ...p, stock: p.stock - orderItem.quantity, costBatches: newCostBatches };
+      }
+      return p;
+    });
+
+    const updatedOrder = {
+      ...order,
+      status: 'completed',
+      paymentMethod,
+      cycleId: currentCycle?.id || null
+    };
+
+    const updatedTables = tables.map(t => 
+      t.number === order.tableNumber ? { ...t, status: 'occupee' } : t
+    );
+
+    const newMovements = order.items.map(item => ({
+      id: "MOV-" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+      productId: item.product.id,
+      productName: item.product.name,
+      type: 'OUT',
+      quantity: item.quantity,
+      reason: `Vente Web Confirmée - ${order.id}`,
+      date: new Date().toISOString(),
+      cycleId: currentCycle?.id || null
+    }));
+
+    set({ 
+      orders: get().orders.map(o => o.id === orderId ? updatedOrder : o),
+      products: updatedProducts,
+      tables: updatedTables,
+      movements: [...newMovements, ...movements],
+      hasNewWebOrder: get().orders.filter(o => o.id !== orderId && o.status === 'pending').length > 0
+    });
+
+    // Sync to backend
+    await Promise.all([
+      insforge.database.from('orders').update(mapToDb(updatedOrder, orderMapping)).eq('id', orderId),
+      ...updatedProducts.filter(p => order.items.find(oi => oi.product.id === p.id)).map(p => 
+        insforge.database.from('products').update(mapToDb(p, productMapping)).eq('id', p.id)
+      ),
+      insforge.database.from('tables').update({ status: 'occupee' }).eq('number', order.tableNumber),
+      insforge.database.from('movements').insert(newMovements.map(m => mapToDb(m, movementMapping)))
+    ]);
+  },
+
+  rejectWebOrder: async (orderId) => {
+    const updatedOrder = { id: orderId, status: 'cancelled' };
+    set((state) => ({
+      orders: state.orders.map(o => o.id === orderId ? { ...o, status: 'cancelled' } : o),
+      hasNewWebOrder: state.orders.filter(o => o.id !== orderId && o.status === 'pending').length > 0
+    }));
+
+    await insforge.database.from('orders').update({ status: 'cancelled' }).eq('id', orderId);
+  },
+
   cancelOrder: (orderId) => set((state) => {
     const orderIndex = state.orders.findIndex(o => o.id === orderId);
     if (orderIndex === -1) return state;
@@ -329,7 +417,6 @@ export const useStore = create((set, get) => ({
     const updatedProducts = state.products.map(p => {
       const canceledItem = order.items.find(item => item.product.id === p.id);
       if (canceledItem) {
-        // Return to stock with its exact average costPrice it was sold at
         const newCostBatches = [...(p.costBatches || [])];
         newCostBatches.push({ qty: canceledItem.quantity, cost: canceledItem.costPrice || 0 });
         

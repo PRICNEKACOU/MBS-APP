@@ -1,9 +1,10 @@
-import React from "react";
+import React, { useState } from "react";
 import { Outlet, NavLink } from "react-router-dom";
 import { Coffee, Package, LayoutDashboard, Grid2x2, BellRing } from "lucide-react";
 import { cn } from "../../utils/utils";
 import { useStore } from "../../store/store";
 import { useTranslation } from "../../utils/i18n";
+import { WebOrdersModal } from "../admin/WebOrdersModal";
 
 const navItems = [
   { path: "/pos", icon: Coffee, label: "nav.pos" },
@@ -17,6 +18,8 @@ export function AdminLayout() {
   const hasNewWebOrder = useStore(state => state.hasNewWebOrder);
   const language = useStore(state => state.language);
   const setLanguage = useStore(state => state.setLanguage);
+  
+  const [isWebOrdersModalOpen, setIsWebOrdersModalOpen] = useState(false);
 
   return (
     <div className="flex bg-slate-950 font-sans text-slate-100 min-h-[100dvh]">
@@ -65,15 +68,19 @@ export function AdminLayout() {
             <span className="hidden lg:block font-medium">Language</span>
           </button>
 
-          {/* Notifications */}
-          <button className={cn(
-            "flex items-center gap-3 px-3 py-3 w-full rounded-lg transition-all",
-            hasNewWebOrder ? "bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.5)]" : "text-slate-400 hover:bg-slate-800"
-          )}>
+          {/* Notifications / Web Orders */}
+          <button 
+            onClick={() => setIsWebOrdersModalOpen(true)}
+            className={cn(
+              "flex items-center gap-3 px-3 py-3 w-full rounded-lg transition-all",
+              hasNewWebOrder ? "bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.5)]" : "text-slate-400 hover:bg-slate-800"
+            )}
+            title="Web Orders"
+          >
             <div className="relative">
               <BellRing className={cn("h-6 w-6 shrink-0", hasNewWebOrder && "animate-bounce")} />
               {hasNewWebOrder && (
-                <span className="absolute top-0 right-0 h-2.5 w-2.5 bg-red-500 rounded-full animate-pulse border-2 border-slate-900" />
+                <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-600 rounded-full animate-pulse border-2 border-slate-900" />
               )}
             </div>
             <span className={cn("hidden lg:block font-medium", hasNewWebOrder && "font-bold text-slate-950")}>Web Orders</span>
@@ -86,13 +93,19 @@ export function AdminLayout() {
         <Outlet />
       </main>
 
+      {/* Web Orders Modal */}
+      <WebOrdersModal 
+        isOpen={isWebOrdersModalOpen} 
+        onClose={() => setIsWebOrdersModalOpen(false)} 
+      />
+
       {/* Mobile Bottom Navigation Component */}
-      <MobileNav />
+      <MobileNav hasNewWebOrder={hasNewWebOrder} onOpenModal={() => setIsWebOrdersModalOpen(true)} />
     </div>
   );
 }
 
-function MobileNav() {
+function MobileNav({ hasNewWebOrder, onOpenModal }) {
   const t = useTranslation();
   
   return (
@@ -117,6 +130,21 @@ function MobileNav() {
           )}
         </NavLink>
       ))}
+      
+      {/* Mobile Notification Button */}
+      <button 
+        onClick={onOpenModal}
+        className={cn(
+          "flex flex-col items-center justify-center w-16 h-full space-y-1 relative",
+          hasNewWebOrder ? "text-amber-500" : "text-slate-400"
+        )}
+      >
+        <div className="relative">
+          <BellRing className={cn("h-6 w-6", hasNewWebOrder && "animate-bounce")} />
+          {hasNewWebOrder && <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-600 rounded-full animate-pulse border-2 border-slate-900" />}
+        </div>
+        <span className="text-[10px] font-medium uppercase tracking-tighter">Web</span>
+      </button>
     </nav>
   );
 }
