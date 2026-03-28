@@ -88,6 +88,34 @@ export const useStore = create((set, get) => ({
         expenses: mappedExpenses,
         isLoading: false
       });
+
+      // Real-time synchronization
+      insforge.channel('any')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
+          const newOrder = mapFromDb(payload.new, orderMapping);
+          if (payload.eventType === 'INSERT') {
+            set((state) => ({ 
+              orders: [newOrder, ...state.orders],
+              hasNewWebOrder: true 
+            }));
+          } else if (payload.eventType === 'UPDATE') {
+            set((state) => ({ 
+              orders: state.orders.map(o => o.id === newOrder.id ? newOrder : o) 
+            }));
+          }
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tables' }, (payload) => {
+          set((state) => ({ 
+            tables: state.tables.map(t => t.id === payload.new.id ? payload.new : t) 
+          }));
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, (payload) => {
+          set((state) => ({ 
+            products: state.products.map(p => p.id === payload.new.id ? mapFromDb(payload.new, productMapping) : p) 
+          }));
+        })
+        .subscribe();
+
     } catch (error) {
       console.error("Failed to initialize store:", error);
       set({ isLoading: false });
@@ -328,9 +356,9 @@ export const useStore = create((set, get) => ({
     };
   }),
 
-  // Simulate incoming customer menu order
-  submitWebOrder: (tableNumber, clientCart) => set((state) => {
-    if (clientCart.length === 0) return state;
+  // Handle incoming customer menu order
+  submitWebOrder: async (tableNumber, clientCart) => {
+    if (clientCart.length === 0) return;
     
     const newOrder = {
       id: "WEB-" + Math.random().toString(36).substr(2, 6).toUpperCase(),
@@ -341,17 +369,19 @@ export const useStore = create((set, get) => ({
       timestamp: new Date().toISOString()
     };
 
-    // Customer places order, table needs service, and trigger notification
-    const updatedTables = state.tables.map(t => 
-      t.number === tableNumber ? { ...t, status: 'service_demande' } : t
-    );
-
-    return { 
+    // UI Optimistic update
+    set((state) => ({ 
       orders: [newOrder, ...state.orders],
-      tables: updatedTables,
+      tables: state.tables.map(t => Number(t.number) === Number(tableNumber) ? { ...t, status: 'service_demande' } : t),
       hasNewWebOrder: true
-    };
-  }),
+    }));
+
+    // Sync to cloud
+    await Promise.all([
+      insforge.database.from('orders').insert([mapToDb(newOrder, orderMapping)]),
+      insforge.database.from('tables').update({ status: 'service_demande' }).eq('number', tableNumber)
+    ]);
+  },
 
   setTableStatus: async (tableId, status) => {
     set((state) => ({
