@@ -2,14 +2,6 @@ import { create } from 'zustand';
 import { insforge } from '../lib/insforge';
 import { playNotificationSound } from '../utils/sound';
 
-const mockProducts = [
-  { id: '1', name: 'Neon Mojito', category: 'Cocktails', price: 12, stock: 15, minStock: 5, imageUrl: 'https://images.unsplash.com/photo-1551538827-9c037cb4f32a?w=400&h=400&fit=crop' },
-  { id: '2', name: 'Cyberpunk IPA', category: 'Beers', price: 8, stock: 4, minStock: 10, imageUrl: 'https://images.unsplash.com/photo-1629851703274-1b15beadd5f5?w=400&h=400&fit=crop' },
-  { id: '3', name: 'Midnight Espresso', category: 'Cocktails', price: 14, stock: 0, minStock: 5, imageUrl: 'https://images.unsplash.com/photo-1541544741938-0af808871cc0?w=400&h=400&fit=crop' },
-  { id: '4', name: 'Synthwave Whiskey', category: 'Spirits', price: 18, stock: 20, minStock: 10, imageUrl: 'https://images.unsplash.com/photo-1527661591475-527312dd65f5?w=400&h=400&fit=crop' },
-  { id: '5', name: 'Laser Lime Soda', category: 'Softs', price: 5, stock: 50, minStock: 20, imageUrl: 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=400&h=400&fit=crop' }
-];
-
 const mockTables = Array.from({ length: 12 }, (_, i) => ({
   id: (i + 1).toString(),
   number: i + 1,
@@ -80,7 +72,7 @@ export const useStore = create((set, get) => ({
       const mappedExpenses = (expenses || []).map(e => mapFromDb(e, expenseMapping));
 
       set({
-        products: mappedProducts.length > 0 ? mappedProducts : mockProducts.map(p => ({ ...p, costBatches: [{ qty: p.stock, cost: 0 }] })),
+        products: mappedProducts, // Strict empty if no DB content
         tables: (tables || []).length > 0 ? tables : mockTables,
         orders: mappedOrders,
         movements: mappedMovements,
@@ -562,7 +554,6 @@ export const useStore = create((set, get) => ({
   },
 
   deleteProduct: async (id) => {
-    // Soft delete to preserve historical integrity (movements/orders)
     set((state) => ({
       products: state.products.filter(p => p.id !== id),
       cart: state.cart.filter(c => c.product.id !== id)
