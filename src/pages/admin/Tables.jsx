@@ -20,7 +20,7 @@ export function Tables() {
     }
   };
 
-  const menuUrl = (tableId) => `${window.location.origin}/menu?table=${tableId}`;
+  const menuUrl = (tableId) => `${window.location.origin}/menu/${tableId}`;
 
   return (
     <div className="p-4 md:p-8 flex flex-col h-full">
