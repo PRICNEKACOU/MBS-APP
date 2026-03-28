@@ -61,7 +61,7 @@ export const useStore = create((set, get) => ({
     set({ isLoading: true });
     try {
       const [{ data: products }, { data: tables }, { data: orders }, { data: movements }, { data: cycles }, { data: expenses }] = await Promise.all([
-        insforge.database.from('products').select('*'),
+        insforge.database.from('products').select('*').eq('archived', false),
         insforge.database.from('tables').select('*'),
         insforge.database.from('orders').select('*'),
         insforge.database.from('movements').select('*'),
@@ -115,9 +115,15 @@ export const useStore = create((set, get) => ({
           }));
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, (payload) => {
-          set((state) => ({ 
-            products: state.products.map(p => p.id === payload.new.id ? mapFromDb(payload.new, productMapping) : p) 
-          }));
+          if (payload.new.archived) {
+             set((state) => ({ products: state.products.filter(p => p.id !== payload.new.id) }));
+          } else {
+             set((state) => ({ 
+               products: state.products.some(p => p.id === payload.new.id)
+                ? state.products.map(p => p.id === payload.new.id ? mapFromDb(payload.new, productMapping) : p)
+                : [mapFromDb(payload.new, productMapping), ...state.products]
+             }));
+          }
         })
         .subscribe();
 
@@ -395,7 +401,6 @@ export const useStore = create((set, get) => ({
   },
 
   rejectWebOrder: async (orderId) => {
-    const updatedOrder = { id: orderId, status: 'cancelled' };
     set((state) => ({
       orders: state.orders.map(o => o.id === orderId ? { ...o, status: 'cancelled' } : o),
       hasNewWebOrder: state.orders.filter(o => o.id !== orderId && o.status === 'pending').length > 0
@@ -557,11 +562,12 @@ export const useStore = create((set, get) => ({
   },
 
   deleteProduct: async (id) => {
+    // Soft delete to preserve historical integrity (movements/orders)
     set((state) => ({
       products: state.products.filter(p => p.id !== id),
       cart: state.cart.filter(c => c.product.id !== id)
     }));
-    await insforge.database.from('products').delete().eq('id', id);
+    await insforge.database.from('products').update({ archived: true }).eq('id', id);
   },
 
   addExpense: async (amount, reason, category = 'Charges Fixes') => {
