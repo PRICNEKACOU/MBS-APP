@@ -1,3 +1,4 @@
+import { create } from 'zustand';
 import { insforge } from '../lib/insforge';
 
 const mockProducts = [
@@ -464,6 +465,3 @@ export const useStore = create((set, get) => ({
   hasNewWebOrder: false,
   setHasNewWebOrder: (val) => set({ hasNewWebOrder: val }),
 }));
-
-// Suppress local storage subscribe for cloud sync
-// but we keep the store definition clean

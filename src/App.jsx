@@ -46,6 +46,7 @@ function App() {
 
         {/* Client Routes */}
         <Route element={<ClientLayout />}>
+          <Route path="/menu/:tableId" element={<Menu />} />
           <Route path="/menu" element={<Menu />} />
         </Route>
       </Routes>

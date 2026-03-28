@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useParams } from "react-router-dom";
 import { Plus, Minus, ShoppingBag, Search, CheckCircle2, Image } from "lucide-react";
 import { useStore } from "../../store/store";
 import { formatPrice } from "../../utils/currency";
@@ -26,7 +26,8 @@ function MenuImage({ src, alt, className }) {
 export function Menu() {
   const t = useTranslation();
   const [searchParams] = useSearchParams();
-  const tableId = searchParams.get("table");
+  const { tableId: pathTableId } = useParams();
+  const tableId = pathTableId || searchParams.get("table");
   
   const { products, currency, submitWebOrder } = useStore();
   
@@ -106,7 +107,7 @@ export function Menu() {
           placeholder={t('menu.search')} 
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full bg-white text-slate-900 rounded-xl pl-10 pr-4 py-3 border border-slate-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all"
+          className="w-full bg-white text-slate-900 rounded-xl pl-10 pr-4 py-2 border border-slate-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all"
         />
       </div>
 
