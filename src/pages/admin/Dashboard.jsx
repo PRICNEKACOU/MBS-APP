@@ -492,7 +492,7 @@ export function Dashboard() {
                 }}>
                   <input 
                     type="number" 
-                    placeholder="Montant (FCFA)" 
+                    placeholder="Montant (EUR)" 
                     value={expenseAmount}
                     onChange={(e) => setExpenseAmount(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 focus:ring-2 focus:ring-amber-500 outline-none"

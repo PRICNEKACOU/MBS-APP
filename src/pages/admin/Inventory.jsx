@@ -380,8 +380,8 @@ export function Inventory() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-400 mb-1">Prix de Base (FCFA) *</label>
-                    <input required type="number" step="1" min="0" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-100 focus:ring-2 focus:ring-amber-500 focus:border-amber-500" />
+                    <label className="block text-sm font-medium text-slate-400 mb-1">Prix de Base (EUR) *</label>
+                    <input required type="number" step="0.01" min="0" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-100 focus:ring-2 focus:ring-amber-500 focus:border-amber-500" />
                   </div>
                 </div>
 
@@ -409,8 +409,8 @@ export function Inventory() {
 
                 {!editingProduct && (
                   <div>
-                    <label className="block text-sm font-medium text-slate-400 mb-1">Coût d'Achat Unitaire (FCFA) *</label>
-                    <input required type="number" min="0" value={formData.unitCost} onChange={e => setFormData({...formData, unitCost: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-100 focus:ring-2 focus:ring-amber-500 focus:border-amber-500" />
+                    <label className="block text-sm font-medium text-slate-400 mb-1">Coût d'Achat Unitaire (EUR) *</label>
+                    <input required type="number" step="0.01" min="0" value={formData.unitCost} onChange={e => setFormData({...formData, unitCost: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-100 focus:ring-2 focus:ring-amber-500 focus:border-amber-500" />
                   </div>
                 )}
 
@@ -469,8 +469,8 @@ export function Inventory() {
                 
                 {movementData.type === 'IN' && (
                   <div>
-                    <label className="block text-sm font-medium text-slate-400 mb-1">Coût d'Achat Unitaire (FCFA) *</label>
-                    <input required type="number" min="0" value={movementData.unitCost} onChange={e => setMovementData({...movementData, unitCost: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-100 focus:ring-2 focus:ring-amber-500 focus:border-amber-500" />
+                    <label className="block text-sm font-medium text-slate-400 mb-1">Coût d'Achat Unitaire (EUR) *</label>
+                    <input required type="number" step="0.01" min="0" value={movementData.unitCost} onChange={e => setMovementData({...movementData, unitCost: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-100 focus:ring-2 focus:ring-amber-500 focus:border-amber-500" />
                   </div>
                 )}
                 

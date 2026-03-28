@@ -1,101 +1,127 @@
-import { create } from 'zustand';
+import { insforge } from '../lib/insforge';
 
 const mockProducts = [
-  { id: '1', name: 'Neon Mojito', category: 'Cocktails', price: 7800, stock: 15, minStock: 5, imageUrl: 'https://images.unsplash.com/photo-1551538827-9c037cb4f32a?w=400&h=400&fit=crop' },
-  { id: '2', name: 'Cyberpunk IPA', category: 'Beers', price: 5000, stock: 4, minStock: 10, imageUrl: 'https://images.unsplash.com/photo-1629851703274-1b15beadd5f5?w=400&h=400&fit=crop' },
-  { id: '3', name: 'Midnight Espresso', category: 'Cocktails', price: 9000, stock: 0, minStock: 5, imageUrl: 'https://images.unsplash.com/photo-1541544741938-0af808871cc0?w=400&h=400&fit=crop' },
-  { id: '4', name: 'Synthwave Whiskey', category: 'Spirits', price: 12000, stock: 20, minStock: 10, imageUrl: 'https://images.unsplash.com/photo-1527661591475-527312dd65f5?w=400&h=400&fit=crop' },
-  { id: '5', name: 'Laser Lime Soda', category: 'Softs', price: 3000, stock: 50, minStock: 20, imageUrl: 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=400&h=400&fit=crop' }
+  { id: '1', name: 'Neon Mojito', category: 'Cocktails', price: 12, stock: 15, minStock: 5, imageUrl: 'https://images.unsplash.com/photo-1551538827-9c037cb4f32a?w=400&h=400&fit=crop' },
+  { id: '2', name: 'Cyberpunk IPA', category: 'Beers', price: 8, stock: 4, minStock: 10, imageUrl: 'https://images.unsplash.com/photo-1629851703274-1b15beadd5f5?w=400&h=400&fit=crop' },
+  { id: '3', name: 'Midnight Espresso', category: 'Cocktails', price: 14, stock: 0, minStock: 5, imageUrl: 'https://images.unsplash.com/photo-1541544741938-0af808871cc0?w=400&h=400&fit=crop' },
+  { id: '4', name: 'Synthwave Whiskey', category: 'Spirits', price: 18, stock: 20, minStock: 10, imageUrl: 'https://images.unsplash.com/photo-1527661591475-527312dd65f5?w=400&h=400&fit=crop' },
+  { id: '5', name: 'Laser Lime Soda', category: 'Softs', price: 5, stock: 50, minStock: 20, imageUrl: 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=400&h=400&fit=crop' }
 ];
 
 const mockTables = Array.from({ length: 12 }, (_, i) => ({
   id: (i + 1).toString(),
   number: i + 1,
-  status: 'libre' // 'libre', 'occupee', 'service_demande'
+  status: 'libre'
 }));
 
-const loadInitial = (key, fallback) => {
-  try {
-    const saved = localStorage.getItem(key);
-    if (saved) return JSON.parse(saved);
-  } catch(e) {
-    console.error("Local storage error:", e);
+const mapToDb = (data, mapping) => {
+  const result = {};
+  for (const key in data) {
+    result[mapping[key] || key] = data[key];
   }
-  return fallback;
+  return result;
 };
 
-const loadInventory = () => {
-  try {
-    const saved = localStorage.getItem('inventory');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      return parsed.map(p => ({
-        ...p,
-        costBatches: p.costBatches || [{ qty: p.stock, cost: 0 }]
-      }));
-    }
-  } catch(e) {
-    console.error("Local storage error:", e);
+const mapFromDb = (data, mapping) => {
+  const result = {};
+  const reverseMapping = Object.fromEntries(Object.entries(mapping).map(([k, v]) => [v, k]));
+  for (const key in data) {
+    result[reverseMapping[key] || key] = data[key];
   }
-  return mockProducts.map(p => ({
-    ...p,
-    costBatches: p.costBatches || [{ qty: p.stock, cost: 0 }]
-  }));
+  return result;
 };
+
+const productMapping = { minStock: 'min_stock', imageUrl: 'image_url', costBatches: 'cost_batches' };
+const cycleMapping = { startTime: 'start_time', endTime: 'end_time', startStock: 'start_stock', endStock: 'end_stock', openedBy: 'opened_by', closedBy: 'closed_by' };
+const orderMapping = { tableNumber: 'table_number', paymentMethod: 'payment_method', cycleId: 'cycle_id' };
+const movementMapping = { productId: 'product_id', productName: 'product_name', cycleId: 'cycle_id' };
+const expenseMapping = { cycleId: 'cycle_id' };
 
 export const useStore = create((set, get) => ({
+  isLoading: true,
+  isSyncing: false,
   language: 'fr',
   setLanguage: (language) => set({ language }),
 
   currency: 'CFA',
   setCurrency: (currency) => set({ currency }),
 
-  products: loadInventory(),
-  tables: loadInitial('tables', mockTables),
-  orders: loadInitial('orders', []),
-  movements: loadInitial('movements', []),
-  cycles: loadInitial('cycles', []),
-  currentCycle: loadInitial('currentCycle', null),
-  expenses: loadInitial('expenses', []),
+  products: [],
+  tables: mockTables,
+  orders: [],
+  movements: [],
+  cycles: [],
+  currentCycle: null,
+  expenses: [],
   cart: [],
 
-  // Service Cycles
-  openCycle: () => set((state) => {
-    if (state.currentCycle) return state;
+  initializeStore: async () => {
+    set({ isLoading: true });
+    try {
+      const [{ data: products }, { data: tables }, { data: orders }, { data: movements }, { data: cycles }, { data: expenses }] = await Promise.all([
+        insforge.database.from('products').select('*'),
+        insforge.database.from('tables').select('*'),
+        insforge.database.from('orders').select('*'),
+        insforge.database.from('movements').select('*'),
+        insforge.database.from('cycles').select('*'),
+        insforge.database.from('expenses').select('*')
+      ]);
 
-    // Determine today's date local
+      const mappedProducts = (products || []).map(p => ({
+        ...mapFromDb(p, productMapping),
+        costBatches: p.cost_batches || []
+      }));
+
+      const mappedOrders = (orders || []).map(o => mapFromDb(o, orderMapping));
+      const mappedCycles = (cycles || []).map(c => mapFromDb(c, cycleMapping));
+      const mappedMovements = (movements || []).map(m => mapFromDb(m, movementMapping));
+      const mappedExpenses = (expenses || []).map(e => mapFromDb(e, expenseMapping));
+
+      set({
+        products: mappedProducts.length > 0 ? mappedProducts : mockProducts.map(p => ({ ...p, costBatches: [{ qty: p.stock, cost: 0 }] })),
+        tables: (tables || []).length > 0 ? tables : mockTables,
+        orders: mappedOrders,
+        movements: mappedMovements,
+        cycles: mappedCycles,
+        currentCycle: mappedCycles.find(c => !c.endTime) || null,
+        expenses: mappedExpenses,
+        isLoading: false
+      });
+    } catch (error) {
+      console.error("Failed to initialize store:", error);
+      set({ isLoading: false });
+    }
+  },
+
+  openCycle: async (openedBy) => {
+    if (get().currentCycle) return;
+
     const today = new Date();
-    const todayStr = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+    const todayStr = today.toISOString().split('T')[0];
 
-    // Find any closed cycle from today
-    const closedTodayCycleIndex = state.cycles.findIndex(c => {
+    const closedTodayCycle = get().cycles.find(c => {
       if (!c.endTime) return false;
-      const cDate = new Date(c.startTime);
-      const cDateStr = cDate.getFullYear() + '-' + String(cDate.getMonth() + 1).padStart(2, '0') + '-' + String(cDate.getDate()).padStart(2, '0');
-      return cDateStr === todayStr;
+      return c.startTime.startsWith(todayStr);
     });
 
-    if (closedTodayCycleIndex !== -1) {
-      // Re-open instead of overriding
+    if (closedTodayCycle) {
       const reopenedCycle = {
-        ...state.cycles[closedTodayCycleIndex],
+        ...closedTodayCycle,
         endTime: null,
         endStock: null,
         closedBy: undefined
       };
       
-      const updatedCycles = [...state.cycles];
-      updatedCycles[closedTodayCycleIndex] = reopenedCycle;
-      
-      setTimeout(() => alert("Session du jour rouverte avec succès !"), 100);
-
-      return {
+      set({
         currentCycle: reopenedCycle,
-        cycles: updatedCycles
-      };
+        cycles: get().cycles.map(c => c.id === reopenedCycle.id ? reopenedCycle : c)
+      });
+      
+      await insforge.database.from('cycles').update(mapToDb(reopenedCycle, cycleMapping)).eq('id', reopenedCycle.id);
+      return;
     }
 
-    const startStock = state.products.map(p => ({
+    const startStock = get().products.map(p => ({
       productId: p.id,
       name: p.name,
       stock: p.stock
@@ -106,35 +132,42 @@ export const useStore = create((set, get) => ({
       startTime: new Date().toISOString(),
       endTime: null,
       startStock,
-      endStock: null
+      endStock: null,
+      openedBy
     };
 
-    return { 
+    set({ 
       currentCycle: newCycle,
-      cycles: [newCycle, ...state.cycles]
-    };
-  }),
+      cycles: [newCycle, ...get().cycles]
+    });
 
-  closeCycle: () => set((state) => {
-    if (!state.currentCycle) return state;
+    await insforge.database.from('cycles').insert([mapToDb(newCycle, cycleMapping)]);
+  },
 
-    const endStock = state.products.map(p => ({
+  closeCycle: async (closedBy) => {
+    const currentCycle = get().currentCycle;
+    if (!currentCycle) return;
+
+    const endStock = get().products.map(p => ({
       productId: p.id,
       name: p.name,
       stock: p.stock
     }));
 
     const finishedCycle = {
-      ...state.currentCycle,
+      ...currentCycle,
       endTime: new Date().toISOString(),
-      endStock
+      endStock,
+      closedBy
     };
 
-    return {
+    set({
       currentCycle: null,
-      cycles: state.cycles.map(c => c.id === finishedCycle.id ? finishedCycle : c)
-    };
-  }),
+      cycles: get().cycles.map(c => c.id === finishedCycle.id ? finishedCycle : c)
+    });
+
+    await insforge.database.from('cycles').update(mapToDb(finishedCycle, cycleMapping)).eq('id', finishedCycle.id);
+  },
 
   // Cart actions
   addToCart: (product, tableNumber = null) => set((state) => {
@@ -178,15 +211,13 @@ export const useStore = create((set, get) => ({
 
   clearCart: () => set({ cart: [] }),
 
-  // Checkout simulating POS transaction
-  checkout: (tableNumber, paymentMethod = 'Espèces') => set((state) => {
-    if (state.cart.length === 0) return state;
+  checkout: async (tableNumber, paymentMethod = 'Espèces') => {
+    const { cart, products, currentCycle, orders, tables, movements } = get();
+    if (cart.length === 0) return;
 
     const itemsForOrder = [];
-    
-    // Deduct stock and calculate FIFO cost
-    const updatedProducts = state.products.map(p => {
-      const cartItem = state.cart.find(item => item.product.id === p.id);
+    const updatedProducts = products.map(p => {
+      const cartItem = cart.find(item => item.product.id === p.id);
       if (cartItem) {
         let remainingToDeduct = cartItem.quantity;
         let totalCostForThisItem = 0;
@@ -196,7 +227,7 @@ export const useStore = create((set, get) => ({
           if (newCostBatches[0].qty <= remainingToDeduct) {
             totalCostForThisItem += newCostBatches[0].qty * newCostBatches[0].cost;
             remainingToDeduct -= newCostBatches[0].qty;
-            newCostBatches.shift(); // Remove empty batch
+            newCostBatches.shift();
           } else {
             totalCostForThisItem += remainingToDeduct * newCostBatches[0].cost;
             newCostBatches[0] = { ...newCostBatches[0], qty: newCostBatches[0].qty - remainingToDeduct };
@@ -205,12 +236,7 @@ export const useStore = create((set, get) => ({
         }
         
         const avgCostPrice = cartItem.quantity > 0 ? totalCostForThisItem / cartItem.quantity : 0;
-        
-        itemsForOrder.push({
-          ...cartItem,
-          costPrice: avgCostPrice
-        });
-
+        itemsForOrder.push({ ...cartItem, costPrice: avgCostPrice });
         return { ...p, stock: p.stock - cartItem.quantity, costBatches: newCostBatches };
       }
       return p;
@@ -219,19 +245,19 @@ export const useStore = create((set, get) => ({
     const newOrder = {
       id: "ORD-" + Math.random().toString(36).substr(2, 6).toUpperCase(),
       items: itemsForOrder,
-      total: state.cart.reduce((sum, item) => sum + (item.sellingPrice * item.quantity), 0),
+      total: cart.reduce((sum, item) => sum + (item.sellingPrice * item.quantity), 0),
       tableNumber,
       paymentMethod,
       status: 'completed',
       timestamp: new Date().toISOString(),
-      cycleId: state.currentCycle?.id || null
+      cycleId: currentCycle?.id || null
     };
 
-    const updatedTables = state.tables.map(t => 
+    const updatedTables = tables.map(t => 
       t.number === tableNumber ? { ...t, status: 'occupee' } : t
     );
 
-    const newMovements = state.cart.map(item => ({
+    const newMovements = cart.map(item => ({
       id: "MOV-" + Math.random().toString(36).substr(2, 9).toUpperCase(),
       productId: item.product.id,
       productName: item.product.name,
@@ -239,17 +265,27 @@ export const useStore = create((set, get) => ({
       quantity: item.quantity,
       reason: `Vente - ${newOrder.id}`,
       date: new Date().toISOString(),
-      cycleId: state.currentCycle?.id || null
+      cycleId: currentCycle?.id || null
     }));
 
-    return { 
-      orders: [newOrder, ...state.orders],
+    set({ 
+      orders: [newOrder, ...orders],
       products: updatedProducts,
       tables: updatedTables,
-      movements: [...newMovements, ...state.movements],
+      movements: [...newMovements, ...movements],
       cart: [] 
-    };
-  }),
+    });
+
+    // Sync to backend
+    await Promise.all([
+      insforge.database.from('orders').insert([mapToDb(newOrder, orderMapping)]),
+      ...updatedProducts.filter(p => cart.find(ci => ci.product.id === p.id)).map(p => 
+        insforge.database.from('products').update(mapToDb(p, productMapping)).eq('id', p.id)
+      ),
+      insforge.database.from('tables').update({ status: 'occupee' }).eq('number', tableNumber),
+      insforge.database.from('movements').insert(newMovements.map(m => mapToDb(m, movementMapping)))
+    ]);
+  },
 
   cancelOrder: (orderId) => set((state) => {
     const orderIndex = state.orders.findIndex(o => o.id === orderId);
@@ -316,13 +352,14 @@ export const useStore = create((set, get) => ({
     };
   }),
 
-  // Table actions
-  setTableStatus: (tableId, status) => set((state) => ({
-    tables: state.tables.map(t => t.id === tableId ? { ...t, status } : t)
-  })),
+  setTableStatus: async (tableId, status) => {
+    set((state) => ({
+      tables: state.tables.map(t => t.id === tableId ? { ...t, status } : t)
+    }));
+    await insforge.database.from('tables').update({ status }).eq('id', tableId);
+  },
 
-  // Product Management actions
-  addProduct: (productInfo) => set((state) => {
+  addProduct: async (productInfo) => {
     const newId = Math.random().toString(36).substr(2, 9);
     const newMovement = {
       id: "MOV-" + Math.random().toString(36).substr(2, 9).toUpperCase(),
@@ -332,29 +369,34 @@ export const useStore = create((set, get) => ({
       quantity: productInfo.stock,
       reason: `Création de produit`,
       date: new Date().toISOString(),
-      cycleId: state.currentCycle?.id || null
+      cycleId: get().currentCycle?.id || null
     };
     const newProduct = { 
       ...productInfo, 
       id: newId,
       costBatches: productInfo.stock > 0 ? [{ qty: productInfo.stock, cost: productInfo.unitCost || 0 }] : []
     };
-    return {
+    set((state) => ({
       products: [newProduct, ...state.products],
       movements: productInfo.stock > 0 ? [newMovement, ...state.movements] : state.movements
-    };
-  }),
+    }));
+    await insforge.database.from('products').insert([mapToDb(newProduct, productMapping)]);
+    if (productInfo.stock > 0) {
+      await insforge.database.from('movements').insert([mapToDb(newMovement, movementMapping)]);
+    }
+  },
 
-  updateProduct: (id, updatedInfo) => set((state) => {
-    return {
+  updateProduct: async (id, updatedInfo) => {
+    set((state) => ({
       products: state.products.map(p => p.id === id ? { ...p, ...updatedInfo } : p)
-    };
-  }),
+    }));
+    await insforge.database.from('products').update(mapToDb(updatedInfo, productMapping)).eq('id', id);
+  },
 
-  adjustStock: (productId, type, quantity, reason, unitCost = 0) => set((state) => {
-    if (quantity <= 0) return state;
-    const product = state.products.find(p => p.id === productId);
-    if (!product) return state;
+  adjustStock: async (productId, type, quantity, reason, unitCost = 0) => {
+    if (quantity <= 0) return;
+    const product = get().products.find(p => p.id === productId);
+    if (!product) return;
 
     let newStock = product.stock;
     let newCostBatches = [...(product.costBatches || [])];
@@ -384,51 +426,44 @@ export const useStore = create((set, get) => ({
       quantity,
       reason,
       date: new Date().toISOString(),
-      cycleId: state.currentCycle?.id || null
+      cycleId: get().currentCycle?.id || null
     };
 
-    return {
+    set((state) => ({
       products: state.products.map(p => p.id === productId ? { ...p, stock: newStock, costBatches: newCostBatches } : p),
       movements: [newMovement, ...state.movements]
-    };
-  }),
+    }));
 
-  deleteProduct: (id) => set((state) => ({
-    products: state.products.filter(p => p.id !== id),
-    cart: state.cart.filter(c => c.product.id !== id) // Remove from cart if deleted
-  })),
+    await insforge.database.from('products').update({ stock: newStock, cost_batches: newCostBatches }).eq('id', productId);
+    await insforge.database.from('movements').insert([mapToDb(newMovement, movementMapping)]);
+  },
 
-  // Expenses management
-  addExpense: (amount, reason, category = 'Charges Fixes') => set((state) => {
+  deleteProduct: async (id) => {
+    set((state) => ({
+      products: state.products.filter(p => p.id !== id),
+      cart: state.cart.filter(c => c.product.id !== id)
+    }));
+    await insforge.database.from('products').delete().eq('id', id);
+  },
+
+  addExpense: async (amount, reason, category = 'Charges Fixes') => {
     const newExpense = {
       id: "EXP-" + Math.random().toString(36).substr(2, 9).toUpperCase(),
       amount,
       reason,
       category,
       date: new Date().toISOString(),
-      cycleId: state.currentCycle?.id || null
+      cycle_id: get().currentCycle?.id || null
     };
-    return {
+    set((state) => ({
       expenses: [newExpense, ...state.expenses]
-    };
-  }),
+    }));
+    await insforge.database.from('expenses').insert([mapToDb(newExpense, expenseMapping)]);
+  },
 
-  // Notification for incoming web orders
   hasNewWebOrder: false,
   setHasNewWebOrder: (val) => set({ hasNewWebOrder: val }),
 }));
 
-// Subscribe to all changes and push to localStorage
-useStore.subscribe((state) => {
-  try {
-    localStorage.setItem('inventory', JSON.stringify(state.products));
-    localStorage.setItem('tables', JSON.stringify(state.tables));
-    localStorage.setItem('orders', JSON.stringify(state.orders));
-    localStorage.setItem('movements', JSON.stringify(state.movements));
-    localStorage.setItem('cycles', JSON.stringify(state.cycles));
-    localStorage.setItem('currentCycle', JSON.stringify(state.currentCycle));
-    localStorage.setItem('expenses', JSON.stringify(state.expenses));
-  } catch (e) {
-    console.error("Failed to save state via subscribe:", e);
-  }
-});
+// Suppress local storage subscribe for cloud sync
+// but we keep the store definition clean
