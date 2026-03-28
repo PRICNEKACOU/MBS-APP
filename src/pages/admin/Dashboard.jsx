@@ -7,7 +7,8 @@ import { Button } from "../../components/ui/Button";
 import { Badge } from "../../components/ui/Badge";
 import { cn } from "../../utils/utils";
 import { useTranslation } from "../../utils/i18n";
-import { calculateHistoricalStock } from "../../utils/stock";
+
+const CFA_RATE = 655.957;
 
 export function OrderDetailModal({ order, onClose, currency, formatPrice }) {
   if (!order) return null;
@@ -43,7 +44,7 @@ export function OrderDetailModal({ order, onClose, currency, formatPrice }) {
                    <span className="font-bold">{item.quantity}x</span> {item.product.name}
                  </div>
                  <div className="text-right">
-                   {formatPrice(item.product.price * item.quantity, currency)}
+                   {formatPrice(item.sellingPrice * item.quantity, currency)}
                  </div>
                </div>
              ))}
@@ -486,13 +487,13 @@ export function Dashboard() {
                 <form className="flex flex-col gap-4" onSubmit={(e) => {
                   e.preventDefault();
                   if(!expenseAmount || !expenseReason) return;
-                  addExpense(Number(expenseAmount), expenseReason);
+                  addExpense(Number(expenseAmount) / CFA_RATE, expenseReason); // Convert to EUR
                   setExpenseAmount("");
                   setExpenseReason("");
                 }}>
                   <input 
                     type="number" 
-                    placeholder="Montant (EUR)" 
+                    placeholder="Montant (FCFA)" 
                     value={expenseAmount}
                     onChange={(e) => setExpenseAmount(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 focus:ring-2 focus:ring-amber-500 outline-none"

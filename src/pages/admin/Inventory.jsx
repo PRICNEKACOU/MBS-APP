@@ -8,6 +8,8 @@ import { Badge } from "../../components/ui/Badge";
 import { useTranslation } from "../../utils/i18n";
 import { calculateHistoricalStock } from "../../utils/stock";
 
+const CFA_RATE = 655.957;
+
 function InventoryImage({ src, alt }) {
   const [error, setError] = useState(false);
   
@@ -58,18 +60,18 @@ export function Inventory() {
   const [formData, setFormData] = useState({
     name: '',
     category: 'Cocktails',
-    price: 0,
-    stock: 0,
+    price: '',
+    stock: '',
     minStock: 5,
     imageUrl: '',
-    unitCost: 0
+    unitCost: ''
   });
   const [movementData, setMovementData] = useState({
     product: null,
     type: 'IN',
     quantity: 1,
     reason: 'Livraison Fournisseur',
-    unitCost: 0
+    unitCost: ''
   });
 
   const computedProducts = isToday ? products : products.map(p => {
@@ -92,7 +94,7 @@ export function Inventory() {
 
   const handleOpenAdd = () => {
     setEditingProduct(null);
-    setFormData({ name: '', category: 'Cocktails', price: 0, stock: 10, minStock: 5, imageUrl: '', unitCost: 0 });
+    setFormData({ name: '', category: 'Cocktails', price: '', stock: '', minStock: 5, imageUrl: '', unitCost: '' });
     setIsModalOpen(true);
   };
 
@@ -101,10 +103,11 @@ export function Inventory() {
     setFormData({
       name: product.name,
       category: product.category,
-      price: product.price,
+      price: Math.round(product.price * CFA_RATE), // Display in CFA
       stock: product.stock,
       minStock: product.minStock,
-      imageUrl: product.imageUrl || ''
+      imageUrl: product.imageUrl || '',
+      unitCost: '' // Not used in edit
     });
     setIsModalOpen(true);
   };
@@ -120,17 +123,17 @@ export function Inventory() {
     if (editingProduct) {
       updateProduct(editingProduct.id, {
         ...formData,
-        price: Number(formData.price),
+        price: Number(formData.price) / CFA_RATE, // Convert back to EUR
         stock: Number(formData.stock),
         minStock: Number(formData.minStock)
       });
     } else {
       addProduct({
         ...formData,
-        price: Number(formData.price),
+        price: Number(formData.price) / CFA_RATE, // Convert back to EUR
         stock: Number(formData.stock),
         minStock: Number(formData.minStock),
-        unitCost: Number(formData.unitCost)
+        unitCost: Number(formData.unitCost) / CFA_RATE // Convert back to EUR
       });
     }
     setIsModalOpen(false);
@@ -260,7 +263,7 @@ export function Inventory() {
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-emerald-500 hover:bg-emerald-500/10 hover:border hover:border-emerald-500/20" 
                                     title="Entrée de stock" 
                                     onClick={() => {
-                                      setMovementData({ product, type: 'IN', quantity: 1, reason: 'Livraison Fournisseur', unitCost: 0 });
+                                      setMovementData({ product, type: 'IN', quantity: 1, reason: 'Livraison Fournisseur', unitCost: '' });
                                       setMovementModalOpen(true);
                                     }}>
                               <Plus className="w-4 h-4" />
@@ -361,7 +364,6 @@ export function Inventory() {
             </div>
             
             <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-y-auto">
-              {/* Product Form Inputs */}
               <div className="p-4 space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-400 mb-1">Nom *</label>
@@ -380,8 +382,8 @@ export function Inventory() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-400 mb-1">Prix de Base (EUR) *</label>
-                    <input required type="number" step="0.01" min="0" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-100 focus:ring-2 focus:ring-amber-500 focus:border-amber-500" />
+                    <label className="block text-sm font-medium text-slate-400 mb-1">Prix de Vente (FCFA) *</label>
+                    <input required type="number" min="0" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-100 focus:ring-2 focus:ring-amber-500 focus:border-amber-500" />
                   </div>
                 </div>
 
@@ -409,8 +411,8 @@ export function Inventory() {
 
                 {!editingProduct && (
                   <div>
-                    <label className="block text-sm font-medium text-slate-400 mb-1">Coût d'Achat Unitaire (EUR) *</label>
-                    <input required type="number" step="0.01" min="0" value={formData.unitCost} onChange={e => setFormData({...formData, unitCost: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-100 focus:ring-2 focus:ring-amber-500 focus:border-amber-500" />
+                    <label className="block text-sm font-medium text-slate-400 mb-1">Coût d'Achat Unitaire (FCFA) *</label>
+                    <input required type="number" min="0" value={formData.unitCost} onChange={e => setFormData({...formData, unitCost: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-100 focus:ring-2 focus:ring-amber-500 focus:border-amber-500" />
                   </div>
                 )}
 
@@ -450,7 +452,7 @@ export function Inventory() {
             
             <form onSubmit={(e) => {
               e.preventDefault();
-              adjustStock(movementData.product.id, movementData.type, Number(movementData.quantity), movementData.reason, Number(movementData.unitCost || 0));
+              adjustStock(movementData.product.id, movementData.type, Number(movementData.quantity), movementData.reason, Number(movementData.unitCost || 0) / CFA_RATE);
               setMovementModalOpen(false);
             }} className="flex flex-col flex-1">
               <div className="p-4 space-y-4">
@@ -469,8 +471,8 @@ export function Inventory() {
                 
                 {movementData.type === 'IN' && (
                   <div>
-                    <label className="block text-sm font-medium text-slate-400 mb-1">Coût d'Achat Unitaire (EUR) *</label>
-                    <input required type="number" step="0.01" min="0" value={movementData.unitCost} onChange={e => setMovementData({...movementData, unitCost: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-100 focus:ring-2 focus:ring-amber-500 focus:border-amber-500" />
+                    <label className="block text-sm font-medium text-slate-400 mb-1">Coût d'Achat Unitaire (FCFA) *</label>
+                    <input required type="number" min="0" value={movementData.unitCost} onChange={e => setMovementData({...movementData, unitCost: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-100 focus:ring-2 focus:ring-amber-500 focus:border-amber-500" />
                   </div>
                 )}
                 

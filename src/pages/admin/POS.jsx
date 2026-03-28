@@ -7,6 +7,8 @@ import { ProductCard } from "../../components/ui/ProductCard";
 import { cn } from "../../utils/utils";
 import { useTranslation } from "../../utils/i18n";
 
+const CFA_RATE = 655.957;
+
 function CartImage({ src, alt, className }) {
   const [error, setError] = useState(false);
 
@@ -193,10 +195,11 @@ export function POS() {
                           type="number" 
                           value={tempPrice} 
                           onChange={(e) => setTempPrice(e.target.value)} 
-                          className="w-16 bg-slate-950 border border-slate-800 rounded p-1 text-xs text-amber-500 focus:outline-none focus:border-amber-500"
+                          className="w-16 bg-slate-950 border border-slate-800 rounded p-1 text-xs text-amber-500 focus:outline-none focus:border-amber-500 font-bold"
+                          autoFocus
                         />
                         <button onClick={() => {
-                          updateCartItemPrice(item.product.id, Number(tempPrice));
+                          updateCartItemPrice(item.product.id, Number(tempPrice) / CFA_RATE);
                           setEditingPriceId(null);
                         }} className="text-emerald-500 hover:bg-emerald-500/10 p-1 rounded transition-colors"><Check className="w-4 h-4" /></button>
                       </div>
@@ -208,7 +211,7 @@ export function POS() {
                         <div className="text-[10px] text-slate-500 ml-1">({formatPrice(item.sellingPrice, currency)}/u)</div>
                         <button onClick={() => {
                           setEditingPriceId(item.product.id);
-                          setTempPrice(item.sellingPrice);
+                          setTempPrice(Math.round(item.sellingPrice * CFA_RATE));
                         }} className="text-slate-500 lg:opacity-0 group-hover/price:opacity-100 transition-opacity p-1 z-10 hover:text-amber-500">
                           <Edit2 className="w-3 h-3" />
                         </button>
@@ -270,7 +273,6 @@ export function POS() {
               <Printer className="h-5 w-5" /> {t('pos.checkout')}
             </span>
             <div className="absolute inset-0 bg-amber-400 transform scale-x-0 group-hover:scale-x-100 transition-transform origin-left rounded-lg duration-300" />
-            {/* The absolute inset bg creates a nice hover sweeping effect */}
           </Button>
         </div>
       </div>
@@ -352,7 +354,6 @@ export function POS() {
               {/* PRINTABLE RECEIPT TEMPLATE (Fully visible) */}
               <div id="printable-receipt" className="font-mono text-sm leading-tight text-black bg-white shadow-sm print:shadow-none w-[300px] shrink-0 p-4" style={{ fontFamily: 'monospace' }}>
                 
-                {/* En-tête centré */}
                 <div className="text-center mb-2">
                   <h1 className="font-bold text-xl uppercase mb-1">BMS APP</h1>
                   <p className="text-xs">
@@ -363,12 +364,10 @@ export function POS() {
                   {receiptOrder.table && <p className="text-xs font-bold mt-1">Table {receiptOrder.table}</p>}
                 </div>
 
-                {/* Séparateur en pointillés */}
                 <div className="text-center text-xs tracking-widest my-1 select-none">
                   ----------------------
                 </div>
 
-                {/* Liste des articles */}
                 <div className="flex flex-col space-y-1 my-2">
                   {receiptOrder.items.map(item => (
                     <div key={item.product.id} className="flex justify-between items-start text-xs">
@@ -382,23 +381,19 @@ export function POS() {
                   ))}
                 </div>
 
-                {/* Séparateur en pointillés */}
                 <div className="text-center text-xs tracking-widest my-1 select-none">
                   ----------------------
                 </div>
 
-                {/* Total mis en évidence */}
                 <div className="flex justify-between items-center my-3 mx-1">
                   <span className="text-lg font-extrabold uppercase">Total</span>
                   <span className="text-xl font-extrabold">{formatPrice(receiptOrder.total, currency)}</span>
                 </div>
                 
-                {/* Mode de paiement */}
                 <div className="text-center text-xs mt-2 uppercase font-bold">
                   Paiement : {receiptOrder.paymentMethod || 'Espèces'}
                 </div>
 
-                {/* Pied de page centré */}
                 <div className="text-center text-xs mt-6 mb-2">
                   <p>Merci de votre visite</p>
                   <p className="font-bold mt-1">Revenez vite !</p>
@@ -407,7 +402,6 @@ export function POS() {
 
             </div>
 
-            {/* Floating Print Button (Hidden on print) */}
             <div className="p-4 border-t border-slate-200 print:hidden bg-slate-100">
               <Button onClick={() => window.print()} className="w-full flex justify-center py-3" variant="primary">
                 <Printer className="w-5 h-5 mr-2" /> Imprimer le ticket
