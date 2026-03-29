@@ -48,6 +48,8 @@ export const useStore = create((set, get) => ({
   currentCycle: null,
   expenses: [],
   cart: [],
+  isCartOpen: false,
+  setIsCartOpen: (isOpen) => set({ isCartOpen: isOpen }),
 
   initializeStore: async () => {
     set({ isLoading: true });
@@ -72,7 +74,7 @@ export const useStore = create((set, get) => ({
       const mappedExpenses = (expenses || []).map(e => mapFromDb(e, expenseMapping));
 
       set({
-        products: mappedProducts, // Strict empty if no DB content
+        products: mappedProducts,
         tables: (tables || []).length > 0 ? tables : mockTables,
         orders: mappedOrders,
         movements: mappedMovements,
@@ -82,42 +84,62 @@ export const useStore = create((set, get) => ({
         isLoading: false
       });
 
-      // Real-time synchronization
-      insforge.channel('any')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
-          if (payload.eventType === 'INSERT') {
-            const newOrder = mapFromDb(payload.new, orderMapping);
+      // Real-time synchronization (InsForge SDK pattern)
+      try {
+        await insforge.realtime.connect();
+
+        // Subscribe to Orders
+        const orderChan = insforge.realtime.subscribe('orders');
+        orderChan.on('ORDER_CHANGE', (payload) => {
+          const dbOrder = payload;
+          const exists = get().orders.some(o => o.id === dbOrder.id);
+          const mappedOrder = mapFromDb(dbOrder, orderMapping);
+          
+          if (!exists) {
             set((state) => ({ 
-              orders: [newOrder, ...state.orders],
-              hasNewWebOrder: newOrder.status === 'pending'
+              orders: [mappedOrder, ...state.orders],
+              hasNewWebOrder: mappedOrder.status === 'pending'
             }));
-            if (newOrder.status === 'pending') {
+            if (mappedOrder.status === 'pending') {
               playNotificationSound();
             }
-          } else if (payload.eventType === 'UPDATE') {
-            const updatedOrder = mapFromDb(payload.new, orderMapping);
+          } else {
             set((state) => ({ 
-              orders: state.orders.map(o => o.id === updatedOrder.id ? updatedOrder : o) 
+              orders: state.orders.map(o => o.id === mappedOrder.id ? mappedOrder : o) 
             }));
           }
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'tables' }, (payload) => {
-          set((state) => ({ 
-            tables: state.tables.map(t => t.id === payload.new.id ? payload.new : t) 
-          }));
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, (payload) => {
-          if (payload.new.archived) {
-             set((state) => ({ products: state.products.filter(p => p.id !== payload.new.id) }));
+        });
+
+        // Subscribe to Products
+        const productChan = insforge.realtime.subscribe('products');
+        productChan.on('PRODUCT_CHANGE', (payload) => {
+          const dbProduct = payload;
+          if (dbProduct.archived) {
+             set((state) => ({ products: state.products.filter(p => p.id !== dbProduct.id) }));
           } else {
+             const mappedProduct = {
+               ...mapFromDb(dbProduct, productMapping),
+               costBatches: dbProduct.cost_batches || []
+             };
              set((state) => ({ 
-               products: state.products.some(p => p.id === payload.new.id)
-                ? state.products.map(p => p.id === payload.new.id ? mapFromDb(payload.new, productMapping) : p)
-                : [mapFromDb(payload.new, productMapping), ...state.products]
+               products: state.products.some(p => p.id === dbProduct.id)
+                ? state.products.map(p => p.id === dbProduct.id ? mappedProduct : p)
+                : [mappedProduct, ...state.products]
              }));
           }
-        })
-        .subscribe();
+        });
+
+        // Subscribe to Tables
+        const tableChan = insforge.realtime.subscribe('tables');
+        tableChan.on('TABLE_CHANGE', (payload) => {
+          const dbTable = payload;
+          set((state) => ({ 
+            tables: state.tables.map(t => t.id === dbTable.id ? dbTable : t) 
+          }));
+        });
+      } catch (wsError) {
+        console.warn("Real-time sync disabled (WebSocket error):", wsError.message);
+      }
 
     } catch (error) {
       console.error("Failed to initialize store:", error);
@@ -475,9 +497,9 @@ export const useStore = create((set, get) => ({
   },
 
   addProduct: async (productInfo) => {
-    const newId = Math.random().toString(36).substr(2, 9);
+    const newId = "PRD-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4);
     const newMovement = {
-      id: "MOV-" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+      id: "MOV-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4).toUpperCase(),
       productId: newId,
       productName: productInfo.name,
       type: 'IN',
@@ -486,9 +508,14 @@ export const useStore = create((set, get) => ({
       date: new Date().toISOString(),
       cycleId: get().currentCycle?.id || null
     };
+
+    // Strip internal/form fields before saving to DB
+    const { unitCost, ...cleanProductInfo } = productInfo;
+
     const newProduct = { 
-      ...productInfo, 
+      ...cleanProductInfo, 
       id: newId,
+      archived: false,
       costBatches: productInfo.stock > 0 ? [{ qty: productInfo.stock, cost: productInfo.unitCost || 0 }] : []
     };
     set((state) => ({
@@ -534,7 +561,7 @@ export const useStore = create((set, get) => ({
     }
 
     const newMovement = {
-      id: "MOV-" + Math.random().toString(36).substr(2, 9).toUpperCase(),
+      id: "MOV-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4).toUpperCase(),
       productId,
       productName: product.name,
       type,

@@ -1,4 +1,4 @@
--- Suppression des anciennes tables si nécessaire
+-- Suppression des anciennes tables si nécessaire pour repartir de zéro
 DROP TABLE IF EXISTS movements CASCADE;
 DROP TABLE IF EXISTS orders CASCADE;
 DROP TABLE IF EXISTS expenses CASCADE;
@@ -16,6 +16,7 @@ CREATE TABLE products (
   min_stock INTEGER DEFAULT 0,
   image_url TEXT,
   cost_batches JSONB DEFAULT '[]'::jsonb,
+  archived BOOLEAN DEFAULT FALSE, -- SOFT DELETE
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -83,11 +84,88 @@ ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE movements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
 
--- Politiques RLS Simplifiées (Public Read/Write pour le moment en mode Admin/Barman local)
--- Dans une prod réelle, on utiliserait auth.uid()
-CREATE POLICY "Public full access" ON products FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access" ON tables FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access" ON cycles FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access" ON orders FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access" ON movements FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public full access" ON expenses FOR ALL USING (true) WITH CHECK (true);
+-- Politiques RLS Simplifiées (Public full access pour mode Admin/Barman)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public full access' AND tablename = 'products') THEN
+        CREATE POLICY "Public full access" ON products FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public full access' AND tablename = 'tables') THEN
+        CREATE POLICY "Public full access" ON tables FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public full access' AND tablename = 'cycles') THEN
+        CREATE POLICY "Public full access" ON cycles FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public full access' AND tablename = 'orders') THEN
+        CREATE POLICY "Public full access" ON orders FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public full access' AND tablename = 'movements') THEN
+        CREATE POLICY "Public full access" ON movements FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public full access' AND tablename = 'expenses') THEN
+        CREATE POLICY "Public full access" ON expenses FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+END $$;
+
+-- REAL-TIME SETUP (InsForge Pattern)
+
+-- Ensure channels exist
+INSERT INTO realtime.channels (pattern, description, enabled) VALUES 
+('orders', 'Canal des commandes', true),
+('products', 'Canal des produits', true),
+('tables', 'Canal des tables', true)
+ON CONFLICT (pattern) DO NOTHING;
+
+-- Trigger Function for Orders
+CREATE OR REPLACE FUNCTION notify_order_changes()
+RETURNS TRIGGER AS $$
+BEGIN
+  PERFORM realtime.publish(
+    'orders',
+    'ORDER_CHANGE',
+    row_to_json(NEW)::jsonb
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER order_realtime
+  AFTER INSERT OR UPDATE ON orders
+  FOR EACH ROW
+  EXECUTE FUNCTION notify_order_changes();
+
+-- Trigger Function for Products
+CREATE OR REPLACE FUNCTION notify_product_changes()
+RETURNS TRIGGER AS $$
+BEGIN
+  PERFORM realtime.publish(
+    'products',
+    'PRODUCT_CHANGE',
+    row_to_json(NEW)::jsonb
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER product_realtime
+  AFTER INSERT OR UPDATE ON products
+  FOR EACH ROW
+  EXECUTE FUNCTION notify_product_changes();
+
+-- Trigger Function for Tables
+CREATE OR REPLACE FUNCTION notify_table_changes()
+RETURNS TRIGGER AS $$
+BEGIN
+  PERFORM realtime.publish(
+    'tables',
+    'TABLE_CHANGE',
+    row_to_json(NEW)::jsonb
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER table_realtime
+  AFTER INSERT OR UPDATE ON tables
+  FOR EACH ROW
+  EXECUTE FUNCTION notify_table_changes();

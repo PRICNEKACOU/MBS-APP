@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Outlet, NavLink } from "react-router-dom";
+import { Outlet, NavLink, useLocation } from "react-router-dom";
 import { Coffee, Package, LayoutDashboard, Grid2x2, BellRing } from "lucide-react";
 import { cn } from "../../utils/utils";
 import { useStore } from "../../store/store";
@@ -15,11 +15,16 @@ const navItems = [
 
 export function AdminLayout() {
   const t = useTranslation();
+  const location = useLocation();
   const hasNewWebOrder = useStore(state => state.hasNewWebOrder);
+  const isCartOpen = useStore(state => state.isCartOpen);
   const language = useStore(state => state.language);
   const setLanguage = useStore(state => state.setLanguage);
   
   const [isWebOrdersModalOpen, setIsWebOrdersModalOpen] = useState(false);
+
+  // Check if we are on the POS page
+  const isPosPage = location.pathname.startsWith('/pos');
 
   return (
     <div className="flex bg-slate-950 font-sans text-slate-100 min-h-[100dvh]">
@@ -88,8 +93,11 @@ export function AdminLayout() {
         </div>
       </aside>
 
-      {/* Main Content Area */}
-      <main className="flex-1 min-w-0 flex flex-col pt-safe md:ml-24 lg:ml-64 mb-16 md:mb-0 transition-all overflow-x-hidden">
+      {/* Main Content Area - relative and z-40 to elevate Outlet above MobileNav */}
+      <main className={cn(
+        "flex-1 min-w-0 flex flex-col pt-safe md:ml-24 lg:ml-64 transition-all overflow-x-hidden relative z-40",
+        !isPosPage ? "mb-16 md:mb-0" : "mb-0"
+      )}>
         <Outlet />
       </main>
 
@@ -99,8 +107,10 @@ export function AdminLayout() {
         onClose={() => setIsWebOrdersModalOpen(false)} 
       />
 
-      {/* Mobile Bottom Navigation Component */}
-      <MobileNav hasNewWebOrder={hasNewWebOrder} onOpenModal={() => setIsWebOrdersModalOpen(true)} />
+      {/* Mobile Bottom Navigation Component - Hidden when Cart is open for space optimization */}
+      {!isCartOpen && (
+        <MobileNav hasNewWebOrder={hasNewWebOrder} onOpenModal={() => setIsWebOrdersModalOpen(true)} />
+      )}
     </div>
   );
 }
@@ -109,7 +119,7 @@ function MobileNav({ hasNewWebOrder, onOpenModal }) {
   const t = useTranslation();
   
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-slate-900/90 backdrop-blur-md border-t border-slate-800 z-50 flex items-center justify-around px-2 pb-safe-bottom">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-slate-900/90 backdrop-blur-md border-t border-slate-800 z-30 flex items-center justify-around px-2 pb-safe-bottom">
       {navItems.map((item) => (
         <NavLink
           key={item.path}
