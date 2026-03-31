@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useStore } from '../../store/store';
 import { insforge } from '../../lib/insforge';
-import { Loader2, Store, User, Lock, Mail, ArrowRight, ShieldCheck, KeyRound, KeySquare, RefreshCw, CheckCircle2, Eye, EyeOff } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { Loader2, Store, User, Lock, Mail, ArrowRight, ShieldCheck, KeyRound, KeySquare, RefreshCw, CheckCircle2, Eye, EyeOff, Sparkles } from 'lucide-react';
 
 // ── Étapes du flux ────────────────────────────────────────────────────────────
 // 'login' | 'register' | 'otp' | 'forgot' | 'reset'
@@ -17,7 +18,8 @@ export const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
-  const [showResendUI, setShowResendUI] = useState(false); // email non confirmé
+  // 'signup' = nouveau compte, 'email' = compte existant non confirmé
+  const [otpType, setOtpType] = useState('signup');
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [showPin, setShowPin] = useState(false);
@@ -113,7 +115,6 @@ export const Auth = () => {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
-    setShowResendUI(false);
 
     try {
       const { data: authData, error: authError } = await insforge.auth.signInWithPassword({
@@ -123,10 +124,15 @@ export const Auth = () => {
 
       if (authError) {
         const msg = (authError.message || '').toLowerCase();
-        // Détection email non confirmé
+        // Détection email non confirmé → on envoie un nouveau code et on ouvre l'écran OTP
         if (msg.includes('email not confirmed') || msg.includes('email verification') || msg.includes('not confirmed')) {
-          setShowResendUI(true);
+          await insforge.auth.resendVerificationEmail({ email });
+          setOtpType('email');
+          setPendingRegistration(null);
+          setStep('otp');
+          setSuccessMessage(`Un code de vérification a été envoyé à ${email}. Saisissez-le ci-dessous.`);
           setError(null);
+          startCooldown(60);
           return;
         }
         throw authError;
@@ -138,8 +144,12 @@ export const Auth = () => {
       console.error(err);
       const msg = (err.message || '').toLowerCase();
       if (msg.includes('email not confirmed') || msg.includes('not confirmed') || msg.includes('email verification')) {
-        setShowResendUI(true);
+        setOtpType('email');
+        setPendingRegistration(null);
+        setStep('otp');
+        setSuccessMessage(`Un code de vérification a été envoyé à ${email}.`);
         setError(null);
+        startCooldown(60);
       } else {
         setError(msg.includes('invalid login credentials') ? 'Email ou code PIN incorrect.' : err.message || 'Erreur lors de la connexion.');
       }
@@ -148,19 +158,18 @@ export const Auth = () => {
     }
   };
 
-  // ── Renvoi email de confirmation (depuis écran de login) ─────────────────
+  // ── Renvoi du code de vérification ─────────────────────────────
   const handleResendConfirmation = async () => {
     if (resendCooldown > 0) return;
     setIsLoading(true);
     try {
-      // Méthode correcte du SDK InForge
       const { error } = await insforge.auth.resendVerificationEmail({ email });
       if (error) throw error;
-      setSuccessMessage('Email renvoyé ! Vérifiez votre boîte mail.');
+      setSuccessMessage('Nouveau code envoyé ! Vérifiez votre boîte mail.');
       startCooldown(60);
     } catch (err) {
       console.error(err);
-      setError('Impossible de renvoyer l’email. Patientez avant de réessayer.');
+      setError('Impossible de renvoyer le code. Patientez avant de réessayer.');
     } finally {
       setIsLoading(false);
     }
@@ -178,18 +187,21 @@ export const Auth = () => {
     setError(null);
 
     try {
-      const { data: authData, error: otpError } = await insforge.auth.verifyOtp({
-        email,
-        token,
-        type: 'email'
-      });
+      // On utilise le bon type selon le flux (inscription vs connexion)
+      const otpPayload = { email, token, type: otpType };
+      const { data: authData, error: otpError } = await insforge.auth.verifyOtp(otpPayload);
 
       if (otpError) throw otpError;
       if (!authData?.user) throw new Error('Session invalide après vérification.');
 
-      // ✅ Session valide — maintenant on peut écrire en DB
+      // ✅ Session valide
+      toast.success('✅ Compte validé ! Bienvenue !', {
+        duration: 3000,
+        style: { background: '#1e293b', color: '#fbbf24', border: '1px solid #f59e0b40' }
+      });
+
       if (pendingRegistration) {
-        // Flux inscription : créer le restaurant + profil maintenant
+        // Flux inscription : créer le restaurant + profil
         await createRestaurantAndProfile(authData.user.id, pendingRegistration);
       } else {
         // Flux connexion : charger le profil existant
@@ -198,10 +210,16 @@ export const Auth = () => {
 
     } catch (err) {
       console.error(err);
-      setError(err.message?.includes('expired') || err.message?.includes('invalid')
-        ? 'Code incorrect ou expiré. Demandez un nouveau code.'
-        : err.message || 'Erreur lors de la vérification.'
-      );
+      const isInvalid = err.message?.toLowerCase().includes('expired')
+        || err.message?.toLowerCase().includes('invalid')
+        || err.message?.toLowerCase().includes('otp');
+      const msg = isInvalid
+        ? 'Code incorrect ou expiré. Cliquez sur « Renvoyer » pour obtenir un nouveau code.'
+        : err.message || 'Erreur lors de la vérification.';
+      setError(msg);
+      toast.error(msg, {
+        style: { background: '#1e293b', color: '#f87171', border: '1px solid #ef444440' }
+      });
     } finally {
       setIsLoading(false);
     }
@@ -300,19 +318,13 @@ export const Auth = () => {
 
       if (authError) throw authError;
 
-      // Vérification e-mail requise par InForge
+      // InForge envoie un code OTP par email
       if (authData?.requireEmailVerification || (authData?.user && !authData?.session)) {
         // Stocker les données en mémoire (PAS d'appel DB ici, pas encore de session)
-        setPendingRegistration({
-          restaurantName,
-          userName,
-          email,
-          pin
-        });
-
-        // Passer à l'étape OTP
+        setPendingRegistration({ restaurantName, userName, email, pin });
+        setOtpType('signup');
         setStep('otp');
-        setSuccessMessage('Compte créé ! Un code de vérification a été envoyé à ' + email);
+        setSuccessMessage(`Code envoyé à ${email} ! Saisissez-le ci-dessous pour activer votre compte.`);
         setError(null);
         startCooldown(60);
         return;
@@ -491,48 +503,27 @@ export const Auth = () => {
           </div>
         )}
 
-        {/* ── EMAIL NON CONFIRMÉ : UI de renvoi ── */}
-        {step === 'login' && showResendUI && (
-          <div className="px-8 pb-8 animate-in fade-in slide-in-from-bottom-4 duration-400">
-            <div className="flex flex-col items-center gap-5 text-center">
-              <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
-                <Mail className="w-8 h-8 text-amber-500" />
-              </div>
-              <div>
-                <p className="text-slate-100 font-semibold text-lg">Compte non activé</p>
-                <p className="text-slate-400 text-sm mt-1.5">
-                  L'adresse <span className="text-amber-400 font-medium">{email}</span> n'a pas encore été confirmée.
-                </p>
-                <p className="text-slate-500 text-xs mt-1">Vérifiez vos e-mails et cliquez sur le lien de confirmation.</p>
-              </div>
-
-              <button
-                onClick={handleResendConfirmation}
-                disabled={resendCooldown > 0 || isLoading}
-                className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-slate-900 font-bold py-3.5 px-4 rounded-xl transition-all duration-300"
-              >
-                {isLoading
-                  ? <Loader2 className="w-5 h-5 animate-spin" />
-                  : <><RefreshCw className="w-5 h-5" /> {resendCooldown > 0 ? `Renvoyer dans ${resendCooldown}s` : "Renvoyer l'email de confirmation"}</>
-                }
-              </button>
-
-              <button
-                onClick={() => { setShowResendUI(false); setError(null); setSuccessMessage(null); }}
-                className="text-slate-500 hover:text-slate-300 text-sm transition-colors"
-              >
-                ← Retour à la connexion
-              </button>
-            </div>
-          </div>
-        )}
+        {/* showResendUI supprimé : le flux email non confirmé redirige désormais
+            directement vers l'écran OTP (handleLogin le gère) */}
 
         {/* ── ÉTAPE OTP ── */}
         {step === 'otp' && (
           <div className="px-8 pb-8 animate-in fade-in slide-in-from-bottom-4 duration-400">
-            <p className="text-slate-400 text-sm text-center mb-6">
-              Entrez le code à 6 chiffres envoyé à <span className="text-slate-200 font-medium">{email}</span>
-            </p>
+
+            {/* Bandeau informatif */}
+            <div className="flex items-start gap-3 bg-amber-500/8 border border-amber-500/20 rounded-2xl p-4 mb-6">
+              <div className="w-9 h-9 rounded-xl bg-amber-500/15 flex items-center justify-center shrink-0 mt-0.5">
+                <Mail className="w-5 h-5 text-amber-400" />
+              </div>
+              <div>
+                <p className="text-slate-200 font-semibold text-sm">Code envoyé par email</p>
+                <p className="text-slate-400 text-xs mt-0.5">
+                  Nous vous avons envoyé un code à 6 chiffres à{' '}
+                  <span className="text-amber-400 font-medium break-all">{email}</span>.
+                  Saisissez-le ci-dessous.
+                </p>
+              </div>
+            </div>
 
             <form onSubmit={handleVerifyOtp} className="space-y-6">
               {/* 6 cases OTP */}
@@ -547,7 +538,12 @@ export const Auth = () => {
                     value={digit}
                     onChange={e => handleOtpChange(i, e.target.value)}
                     onKeyDown={e => handleOtpKeyDown(i, e)}
-                    className={`w-11 h-14 text-center text-xl font-bold rounded-xl border bg-slate-950 text-slate-100 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-amber-500/60 focus:border-amber-500 ${digit ? 'border-amber-500/50 text-amber-400' : 'border-slate-700'}`}
+                    autoFocus={i === 0}
+                    className={`w-11 h-14 text-center text-2xl font-bold rounded-xl border-2 bg-slate-950 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-amber-500/40 ${
+                      digit
+                        ? 'border-amber-500 text-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.15)]'
+                        : 'border-slate-700 text-slate-100 focus:border-amber-500'
+                    }`}
                   />
                 ))}
               </div>
@@ -555,22 +551,22 @@ export const Auth = () => {
               <button
                 type="submit"
                 disabled={isLoading || otpDigits.join('').length < 6}
-                className="w-full bg-amber-500 hover:bg-amber-600 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-slate-900 font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-all duration-300"
+                className="w-full bg-amber-500 hover:bg-amber-600 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed text-slate-900 font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-all duration-300 shadow-lg shadow-amber-500/20"
               >
                 {isLoading
                   ? <Loader2 className="w-5 h-5 animate-spin" />
-                  : <><CheckCircle2 className="w-5 h-5" /> Vérifier le code</>
+                  : <><Sparkles className="w-5 h-5" /> Valider mon compte</>
                 }
               </button>
             </form>
 
             {/* Renvoi du code */}
             <div className="mt-5 text-center">
-              <p className="text-slate-500 text-sm mb-2">Vous n'avez pas reçu le code ?</p>
+              <p className="text-slate-500 text-xs mb-2">Vous n'avez pas reçu le code ?</p>
               <button
                 onClick={handleResendOtp}
                 disabled={resendCooldown > 0 || isLoading}
-                className="flex items-center gap-1.5 mx-auto text-sm font-semibold disabled:text-slate-600 disabled:cursor-not-allowed text-amber-500 hover:text-amber-400 transition-colors duration-200"
+                className="flex items-center gap-1.5 mx-auto text-sm font-semibold disabled:text-slate-700 disabled:cursor-not-allowed text-amber-500 hover:text-amber-400 transition-colors duration-200"
               >
                 <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
                 {resendCooldown > 0
@@ -582,8 +578,8 @@ export const Auth = () => {
 
             {/* Revenir en arrière */}
             <button
-              onClick={() => { setStep('login'); setError(null); setOtpDigits(['', '', '', '', '', '']); setSuccessMessage(null); }}
-              className="mt-4 w-full text-slate-500 hover:text-slate-300 text-sm text-center transition-colors duration-200"
+              onClick={() => { setStep('login'); setError(null); setOtpDigits(['', '', '', '', '', '']); setSuccessMessage(null); setPendingRegistration(null); }}
+              className="mt-5 w-full text-slate-600 hover:text-slate-400 text-xs text-center transition-colors duration-200"
             >
               ← Retour à la connexion
             </button>
