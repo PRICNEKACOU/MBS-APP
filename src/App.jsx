@@ -5,14 +5,19 @@ import { POS } from "./pages/admin/POS";
 import { Inventory } from "./pages/admin/Inventory";
 import { Dashboard } from "./pages/admin/Dashboard";
 import { Tables } from "./pages/admin/Tables";
+import { Auth } from "./pages/admin/Auth";
 import { Menu } from "./pages/client/Menu";
 import { useStore } from "./store/store";
 import { useEffect } from "react";
 import { Loader2 } from "lucide-react";
+import { Toaster } from "react-hot-toast";
+
+import { ProtectedRoute } from "./components/ProtectedRoute";
 
 function App() {
   const initializeStore = useStore(state => state.initializeStore);
   const isLoading = useStore(state => state.isLoading);
+  const isAuthenticated = useStore(state => state.auth.isAuthenticated);
 
   useEffect(() => {
     initializeStore();
@@ -33,22 +38,36 @@ function App() {
 
   return (
     <BrowserRouter>
+      <Toaster position="top-center" reverseOrder={false} />
       <Routes>
         <Route path="/" element={<Navigate to="/pos" replace />} />
         
-        {/* Admin Routes */}
-        <Route element={<AdminLayout />}>
-          <Route path="/pos" element={<POS />} />
-          <Route path="/inventory" element={<Inventory />} />
-          <Route path="/tables" element={<Tables />} />
-          <Route path="/dashboard" element={<Dashboard />} />
+        {/* Auth Route */}
+        <Route path="/auth" element={!isAuthenticated ? <Auth /> : <Navigate to="/pos" replace />} />
+
+        {/* Protected Routes Wrapper */}
+        <Route element={<ProtectedRoute />}>
+          <Route element={<AdminLayout />}>
+            {/* Caisse accessible par tous */}
+            <Route path="/pos" element={<POS />} />
+
+            {/* Routes réservées aux ADMINS */}
+            <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
+              <Route path="/inventory" element={<Inventory />} />
+              <Route path="/tables" element={<Tables />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+            </Route>
+          </Route>
         </Route>
 
-        {/* Client Routes */}
+        {/* Client Routes (QR Menu) */}
         <Route element={<ClientLayout />}>
           <Route path="/menu/:tableId" element={<Menu />} />
           <Route path="/menu" element={<Menu />} />
         </Route>
+
+        {/* Fallback */}
+        <Route path="*" element={<Navigate to="/pos" replace />} />
       </Routes>
     </BrowserRouter>
   );

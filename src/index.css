@@ -21,16 +21,19 @@
   }
 }
 
-/* Print Styles */
+/* Print Styles — POS Receipt */
 @media print {
   @page {
     margin: 0;
     size: 80mm auto;
   }
-  body * {
-    visibility: hidden;
-  }
-  #printable-receipt, #printable-receipt * {
+
+  /* Default: hide everything */
+  body * { visibility: hidden; }
+
+  /* POS Receipt print */
+  #printable-receipt,
+  #printable-receipt * {
     visibility: visible;
   }
   #printable-receipt {
@@ -43,5 +46,26 @@
     margin: 0 !important;
     background-color: white !important;
     color: black !important;
+  }
+
+  /* Point Global print — only when #pg-printable is present and receipt is NOT */
+  body:not(:has(#printable-receipt)) #pg-printable,
+  body:not(:has(#printable-receipt)) #pg-printable * {
+    visibility: visible;
+  }
+  body:not(:has(#printable-receipt)) #pg-printable {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 80mm;
+    background: white !important;
+    color: black !important;
+    padding: 10px;
+  }
+
+  /* Always hide nav/sidebar during print */
+  .no-print {
+    display: none !important;
+    visibility: hidden !important;
   }
 }
