@@ -178,8 +178,8 @@ export const Auth = () => {
   // ── Vérification OTP ─────────────────────────────────────────────────────────
   const handleVerifyOtp = async (e) => {
     e.preventDefault();
-    const token = otpDigits.join('');
-    if (token.length < 6) {
+    const cleanToken = otpDigits.join('').trim();
+    if (cleanToken.length < 6) {
       setError('Veuillez saisir les 6 chiffres du code.');
       return;
     }
@@ -188,7 +188,9 @@ export const Auth = () => {
 
     try {
       // On utilise le bon type selon le flux (inscription vs connexion)
-      const otpPayload = { email, token, type: otpType };
+      const otpPayload = { email, token: cleanToken, type: otpType };
+      console.log('Payload OTP:', otpPayload);
+      
       const { data: authData, error: otpError } = await insforge.auth.verifyOtp(otpPayload);
 
       if (otpError) throw otpError;
