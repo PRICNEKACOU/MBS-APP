@@ -1,18 +1,26 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useStore } from '../../store/store';
 import { insforge } from '../../lib/insforge';
-import { Loader2, Store, User, Lock, Mail, ArrowRight, ShieldCheck, KeyRound, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Loader2, Store, User, Lock, Mail, ArrowRight, ShieldCheck, KeyRound, KeySquare, RefreshCw, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 
 // ── Étapes du flux ────────────────────────────────────────────────────────────
-// 'login' | 'register' | 'otp'
+// 'login' | 'register' | 'otp' | 'forgot' | 'reset'
 
 export const Auth = () => {
-  const [step, setStep] = useState('login'); // 'login' | 'register' | 'otp'
+  const location = useLocation();
+  
+  // Détection du token de reset depuis l'URL (lien e-mail)
+  const resetToken = new URLSearchParams(location.search).get('token');
+
+  const [step, setStep] = useState(resetToken ? 'reset' : 'login');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
   const [showResendUI, setShowResendUI] = useState(false); // email non confirmé
+  const [newPin, setNewPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [showPin, setShowPin] = useState(false);
 
   // Countdown pour le renvoi OTP
   const [resendCooldown, setResendCooldown] = useState(0);
@@ -49,6 +57,55 @@ export const Auth = () => {
         return prev - 1;
       });
     }, 1000);
+  };
+
+  // ── Mot de passe oublié : envoi du lien ─────────────────────────────────────
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const { error } = await insforge.auth.sendResetPasswordEmail({ email });
+      if (error) throw error;
+      setSuccessMessage(`Un lien de réinitialisation a été envoyé à ${email}. Vérifiez votre boîte mail.`);
+    } catch (err) {
+      console.error(err);
+      setError(err.message || 'Impossible d\'envoyer le lien. Vérifiez l\'adresse e-mail.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ── Réinitialisation du mot de passe ─────────────────────────────────────────
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    setError(null);
+
+    if (newPin.length < 6) {
+      setError('Le nouveau code PIN doit faire au moins 6 caractères.');
+      return;
+    }
+    if (newPin !== confirmPin) {
+      setError('Les codes PIN ne correspondent pas.');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const { error } = await insforge.auth.resetPassword({
+        token: resetToken,
+        newPassword: newPin
+      });
+      if (error) throw error;
+      setSuccessMessage('Mot de passe réinitialisé ! Vous pouvez maintenant vous connecter.');
+      setTimeout(() => setStep('login'), 2500);
+    } catch (err) {
+      console.error(err);
+      setError(err.message || 'Lien invalide ou expiré. Demandez un nouveau lien.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // ── Connexion ──────────────────────────────────────────────────
@@ -319,16 +376,16 @@ export const Auth = () => {
             MBS <span className="text-amber-500">APP</span>
           </h1>
           <p className="text-slate-400 mt-2 text-sm">
-            {step === 'otp'
-              ? 'Vérification de votre identité'
-              : step === 'login'
-                ? 'Connectez-vous à votre espace'
-                : 'Créez votre espace restaurant'}
+            {step === 'otp' ? 'Vérification de votre identité'
+              : step === 'forgot' ? 'Récupération du compte'
+              : step === 'reset' ? 'Nouveau mot de passe'
+              : step === 'login' ? 'Connectez-vous à votre espace'
+              : 'Créez votre espace restaurant'}
           </p>
         </div>
 
-        {/* Tabs (masqués pendant OTP) */}
-        {step !== 'otp' && (
+        {/* Tabs (masqués pendant OTP, forgot, reset) */}
+        {step !== 'otp' && step !== 'forgot' && step !== 'reset' && (
           <div className="flex px-8 mb-6">
             <button
               onClick={() => { setStep('login'); setError(null); setSuccessMessage(null); }}
@@ -355,6 +412,82 @@ export const Auth = () => {
           <div className="mx-8 mb-4 p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400 text-sm text-center animate-in fade-in duration-300 flex items-start gap-2">
             <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" />
             <span>{successMessage}</span>
+          </div>
+        )}
+
+        {/* ── MOT DE PASSE OUBLIÉ ── */}
+        {step === 'forgot' && (
+          <div className="px-8 pb-8 animate-in fade-in slide-in-from-bottom-4 duration-400">
+            <p className="text-slate-400 text-sm text-center mb-6">
+              Entrez votre adresse e-mail pour recevoir un lien de réinitialisation.
+            </p>
+            <form onSubmit={handleForgotPassword} className="space-y-4">
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                  <Mail className="h-5 w-5 text-slate-500" />
+                </div>
+                <input
+                  type="email" required value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="Adresse email"
+                  className="w-full pl-11 pr-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 transition-all"
+                />
+              </div>
+              <button
+                type="submit" disabled={isLoading}
+                className="w-full bg-amber-500 hover:bg-amber-600 active:scale-[0.98] disabled:opacity-50 text-slate-900 font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-all duration-300"
+              >
+                {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Mail className="w-5 h-5" /> Envoyer le lien</>}
+              </button>
+            </form>
+            <button
+              onClick={() => { setStep('login'); setError(null); setSuccessMessage(null); }}
+              className="mt-4 w-full text-slate-500 hover:text-slate-300 text-sm text-center transition-colors"
+            >
+              ← Retour à la connexion
+            </button>
+          </div>
+        )}
+
+        {/* ── NOUVEAU MOT DE PASSE (depuis lien e-mail) ── */}
+        {step === 'reset' && (
+          <div className="px-8 pb-8 animate-in fade-in slide-in-from-bottom-4 duration-400">
+            <p className="text-slate-400 text-sm text-center mb-6">
+              Choisissez un nouveau code PIN pour votre compte.
+            </p>
+            <form onSubmit={handleResetPassword} className="space-y-4">
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                  <Lock className="h-5 w-5 text-slate-500" />
+                </div>
+                <input
+                  type={showPin ? 'text' : 'password'} required value={newPin}
+                  onChange={e => setNewPin(e.target.value)}
+                  placeholder="Nouveau code PIN (6 min.)"
+                  className="w-full pl-11 pr-12 py-3 bg-slate-950 border border-slate-800 rounded-xl text-slate-200 placeholder:text-slate-500 tracking-widest focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 transition-all"
+                />
+                <button type="button" onClick={() => setShowPin(p => !p)} className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-500 hover:text-slate-300">
+                  {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                  <Lock className="h-5 w-5 text-slate-500" />
+                </div>
+                <input
+                  type={showPin ? 'text' : 'password'} required value={confirmPin}
+                  onChange={e => setConfirmPin(e.target.value)}
+                  placeholder="Confirmer le code PIN"
+                  className="w-full pl-11 pr-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-slate-200 placeholder:text-slate-500 tracking-widest focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 transition-all"
+                />
+              </div>
+              <button
+                type="submit" disabled={isLoading}
+                className="w-full bg-amber-500 hover:bg-amber-600 active:scale-[0.98] disabled:opacity-50 text-slate-900 font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-all duration-300"
+              >
+                {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><KeySquare className="w-5 h-5" /> Enregistrer le nouveau PIN</>}
+              </button>
+            </form>
           </div>
         )}
 
