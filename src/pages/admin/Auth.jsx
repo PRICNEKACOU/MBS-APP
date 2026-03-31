@@ -21,6 +21,9 @@ export const Auth = () => {
   const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', '']);
   const otpRefs = useRef([]);
 
+  // Données d'inscription en attente de validation OTP
+  const [pendingRegistration, setPendingRegistration] = useState(null);
+
   const navigate = useNavigate();
   const setAuth = useStore(state => state.setAuth);
   const initializeStore = useStore(state => state.initializeStore);
@@ -110,16 +113,28 @@ export const Auth = () => {
       });
 
       if (otpError) throw otpError;
+      if (!authData?.user) throw new Error('Session invalide après vérification.');
 
-      await finalizeLogin(authData);
+      // ✅ Session valide — maintenant on peut écrire en DB
+      if (pendingRegistration) {
+        // Flux inscription : créer le restaurant + profil maintenant
+        await createRestaurantAndProfile(authData.user.id, pendingRegistration);
+      } else {
+        // Flux connexion : charger le profil existant
+        await finalizeLogin(authData);
+      }
 
     } catch (err) {
       console.error(err);
-      setError('Code incorrect ou expiré. Demandez un nouveau code.');
+      setError(err.message?.includes('expired') || err.message?.includes('invalid')
+        ? 'Code incorrect ou expiré. Demandez un nouveau code.'
+        : err.message || 'Erreur lors de la vérification.'
+      );
     } finally {
       setIsLoading(false);
     }
   };
+
 
   // ── Renvoi du code ───────────────────────────────────────────────────────────
   const handleResendOtp = async () => {
@@ -168,6 +183,38 @@ export const Auth = () => {
     navigate('/pos');
   };
 
+  // ── Création du restaurant APRÈS session valide ──────────────────────────────
+  const createRestaurantAndProfile = async (userId, { restaurantName: rName, userName: uName, email: uEmail, pin: uPin }) => {
+    // Créer le restaurant (session valide = RLS passe)
+    const { data: newRestaurant, error: restError } = await insforge.database
+      .from('restaurants')
+      .insert([{ nom: rName }])
+      .select()
+      .single();
+
+    if (restError) throw new Error(`Restaurant: ${restError.message}`);
+
+    // Créer le profil bms_users
+    const { data: newUser, error: userError } = await insforge.database
+      .from('bms_users')
+      .insert([{
+        id: userId,
+        restaurant_id: newRestaurant.id,
+        nom: uName,
+        email: uEmail,
+        pin_code: uPin,
+        role: 'ADMIN'
+      }])
+      .select()
+      .single();
+
+    if (userError) throw new Error(`Profil: ${userError.message}`);
+
+    setAuth({ isAuthenticated: true, user: newUser, restaurant: newRestaurant });
+    await initializeStore();
+    navigate('/pos');
+  };
+
   // ── Inscription ──────────────────────────────────────────────────────────────
   const handleRegister = async (e) => {
     e.preventDefault();
@@ -183,27 +230,13 @@ export const Auth = () => {
 
       // Vérification e-mail requise par InForge
       if (authData?.requireEmailVerification || (authData?.user && !authData?.session)) {
-        // Créer le restaurant et le profil en avance (ils seront accessibles après vérification)
-        const { data: newRestaurant, error: restError } = await insforge.database
-          .from('restaurants')
-          .insert([{ nom: restaurantName }])
-          .select()
-          .single();
-
-        if (restError) throw new Error(`Restaurant: ${restError.message}`);
-
-        const { error: userError } = await insforge.database
-          .from('bms_users')
-          .insert([{
-            id: authData.user.id,
-            restaurant_id: newRestaurant.id,
-            nom: userName,
-            email: email,
-            pin_code: pin,
-            role: 'ADMIN'
-          }]);
-
-        if (userError) throw userError;
+        // Stocker les données en mémoire (PAS d'appel DB ici, pas encore de session)
+        setPendingRegistration({
+          restaurantName,
+          userName,
+          email,
+          pin
+        });
 
         // Passer à l'étape OTP
         setStep('otp');
