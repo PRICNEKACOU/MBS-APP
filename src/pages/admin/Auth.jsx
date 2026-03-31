@@ -12,6 +12,7 @@ export const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
+  const [showResendUI, setShowResendUI] = useState(false); // email non confirmé
 
   // Countdown pour le renvoi OTP
   const [resendCooldown, setResendCooldown] = useState(0);
@@ -50,11 +51,12 @@ export const Auth = () => {
     }, 1000);
   };
 
-  // ── Connexion ────────────────────────────────────────────────────────────────
+  // ── Connexion ──────────────────────────────────────────────────
   const handleLogin = async (e) => {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
+    setShowResendUI(false);
 
     try {
       const { data: authData, error: authError } = await insforge.auth.signInWithPassword({
@@ -63,15 +65,11 @@ export const Auth = () => {
       });
 
       if (authError) {
-        const msg = authError.message || '';
-        // Intercepter l'erreur de vérification e-mail
-        if (msg.toLowerCase().includes('email') && msg.toLowerCase().includes('verif')) {
-          // Renvoyer un OTP de vérification
-          await insforge.auth.resend({ type: 'signup', email });
-          setStep('otp');
-          setSuccessMessage(null);
+        const msg = (authError.message || '').toLowerCase();
+        // Détection email non confirmé
+        if (msg.includes('email not confirmed') || msg.includes('email verification') || msg.includes('not confirmed')) {
+          setShowResendUI(true);
           setError(null);
-          startCooldown(60);
           return;
         }
         throw authError;
@@ -81,14 +79,31 @@ export const Auth = () => {
 
     } catch (err) {
       console.error(err);
-      const msg = err.message || '';
-      if (msg.toLowerCase().includes('email verification')) {
-        setStep('otp');
+      const msg = (err.message || '').toLowerCase();
+      if (msg.includes('email not confirmed') || msg.includes('not confirmed') || msg.includes('email verification')) {
+        setShowResendUI(true);
         setError(null);
-        startCooldown(60);
       } else {
-        setError(msg === 'Invalid login credentials' ? 'Email ou code PIN incorrect.' : msg || 'Erreur lors de la connexion.');
+        setError(msg.includes('invalid login credentials') ? 'Email ou code PIN incorrect.' : err.message || 'Erreur lors de la connexion.');
       }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ── Renvoi email de confirmation (depuis écran de login) ─────────────────
+  const handleResendConfirmation = async () => {
+    if (resendCooldown > 0) return;
+    setIsLoading(true);
+    try {
+      // Méthode correcte du SDK InForge
+      const { error } = await insforge.auth.resendVerificationEmail({ email });
+      if (error) throw error;
+      setSuccessMessage('Email renvoyé ! Vérifiez votre boîte mail.');
+      startCooldown(60);
+    } catch (err) {
+      console.error(err);
+      setError('Impossible de renvoyer l’email. Patientez avant de réessayer.');
     } finally {
       setIsLoading(false);
     }
@@ -136,14 +151,14 @@ export const Auth = () => {
   };
 
 
-  // ── Renvoi du code ───────────────────────────────────────────────────────────
+  // ── Renvoi OTP (depuis étape OTP) ─────────────────────────────────
   const handleResendOtp = async () => {
     if (resendCooldown > 0) return;
     setIsLoading(true);
     setError(null);
 
     try {
-      await insforge.auth.resend({ type: 'signup', email });
+      await insforge.auth.resendVerificationEmail({ email });
       setSuccessMessage('Nouveau code envoyé ! Vérifiez votre boîte mail.');
       setOtpDigits(['', '', '', '', '', '']);
       otpRefs.current[0]?.focus();
@@ -340,6 +355,42 @@ export const Auth = () => {
           <div className="mx-8 mb-4 p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400 text-sm text-center animate-in fade-in duration-300 flex items-start gap-2">
             <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" />
             <span>{successMessage}</span>
+          </div>
+        )}
+
+        {/* ── EMAIL NON CONFIRMÉ : UI de renvoi ── */}
+        {step === 'login' && showResendUI && (
+          <div className="px-8 pb-8 animate-in fade-in slide-in-from-bottom-4 duration-400">
+            <div className="flex flex-col items-center gap-5 text-center">
+              <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
+                <Mail className="w-8 h-8 text-amber-500" />
+              </div>
+              <div>
+                <p className="text-slate-100 font-semibold text-lg">Compte non activé</p>
+                <p className="text-slate-400 text-sm mt-1.5">
+                  L'adresse <span className="text-amber-400 font-medium">{email}</span> n'a pas encore été confirmée.
+                </p>
+                <p className="text-slate-500 text-xs mt-1">Vérifiez vos e-mails et cliquez sur le lien de confirmation.</p>
+              </div>
+
+              <button
+                onClick={handleResendConfirmation}
+                disabled={resendCooldown > 0 || isLoading}
+                className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-slate-900 font-bold py-3.5 px-4 rounded-xl transition-all duration-300"
+              >
+                {isLoading
+                  ? <Loader2 className="w-5 h-5 animate-spin" />
+                  : <><RefreshCw className="w-5 h-5" /> {resendCooldown > 0 ? `Renvoyer dans ${resendCooldown}s` : "Renvoyer l'email de confirmation"}</>
+                }
+              </button>
+
+              <button
+                onClick={() => { setShowResendUI(false); setError(null); setSuccessMessage(null); }}
+                className="text-slate-500 hover:text-slate-300 text-sm transition-colors"
+              >
+                ← Retour à la connexion
+              </button>
+            </div>
           </div>
         )}
 
