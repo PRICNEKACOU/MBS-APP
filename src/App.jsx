@@ -5,8 +5,11 @@ import { POS } from "./pages/admin/POS";
 import { Inventory } from "./pages/admin/Inventory";
 import { Dashboard } from "./pages/admin/Dashboard";
 import { Tables } from "./pages/admin/Tables";
+import { HelpCenter } from "./pages/admin/HelpCenter";
+import { Settings } from "./pages/admin/Settings";
 import { Auth } from "./pages/admin/Auth";
 import { Menu } from "./pages/client/Menu";
+import { PublicMenu } from "./pages/public/PublicMenu";
 import { useStore } from "./store/store";
 import { useEffect } from "react";
 import { Loader2 } from "lucide-react";
@@ -56,15 +59,20 @@ function App() {
               <Route path="/inventory" element={<Inventory />} />
               <Route path="/tables" element={<Tables />} />
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/help" element={<HelpCenter />} />
             </Route>
           </Route>
         </Route>
 
-        {/* Client Routes (QR Menu) */}
+        {/* Client Routes (QR Menu - legacy, uses auth store) */}
         <Route element={<ClientLayout />}>
           <Route path="/menu/:tableId" element={<Menu />} />
           <Route path="/menu" element={<Menu />} />
         </Route>
+
+        {/* Public Menu (multi-tenant, no auth required) */}
+        <Route path="/m/:restaurantId" element={<PublicMenu />} />
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/pos" replace />} />

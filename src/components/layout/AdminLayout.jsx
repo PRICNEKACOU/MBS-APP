@@ -1,16 +1,21 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Outlet, NavLink } from "react-router-dom";
-import { Coffee, Package, LayoutDashboard, Grid2x2, BellRing, Menu, X, LogOut } from "lucide-react";
+import { Coffee, Package, LayoutDashboard, Grid2x2, BellRing, Menu, X, LogOut, HelpCircle, Settings } from "lucide-react";
 import { cn } from "../../utils/utils";
 import { useStore } from "../../store/store";
 import { useTranslation } from "../../utils/i18n";
 import { WebOrdersModal } from "../admin/WebOrdersModal";
+import { OnboardingTour } from "../admin/OnboardingTour";
+import { LockScreen } from "../admin/LockScreen";
+import { useOnlineStatus } from "../../hooks/useOnlineStatus";
 
 const navItems = [
   { path: "/pos", icon: Coffee, label: "nav.pos" },
   { path: "/inventory", icon: Package, label: "nav.inventory" },
   { path: "/tables", icon: Grid2x2, label: "nav.tables" },
   { path: "/dashboard", icon: LayoutDashboard, label: "nav.dashboard" },
+  { path: "/settings", icon: Settings, label: "nav.settings" },
+  { path: "/help", icon: HelpCircle, label: "nav.help" },
 ];
 
 export function AdminLayout() {
@@ -21,8 +26,30 @@ export function AdminLayout() {
   const restaurant = useStore(state => state.auth.restaurant);
   const logout = useStore(state => state.logout);
 
+  const isLocked = useStore(state => state.isLocked);
+  const lockScreen = useStore(state => state.lockScreen);
+  const activeStaff = useStore(state => state.activeStaff);
+  const staff = useStore(state => state.staff);
+
+  const offlineQueue = useStore(state => state.offlineQueue);
+  const syncOfflineQueue = useStore(state => state.syncOfflineQueue);
+  const isOnline = useOnlineStatus();
+
   const [isWebOrdersModalOpen, setIsWebOrdersModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // Auto-sync when back online
+  useEffect(() => {
+    if (isOnline && offlineQueue.length > 0) {
+      syncOfflineQueue();
+    }
+  }, [isOnline]);
+
+  useEffect(() => {
+    const done = localStorage.getItem('mbs_onboarding_done');
+    if (!done) setShowOnboarding(true);
+  }, []);
 
   return (
     <div className="flex bg-slate-950 font-sans text-slate-100 min-h-[100dvh]">
@@ -36,6 +63,11 @@ export function AdminLayout() {
           <span className="font-bold text-amber-500 text-2xl lg:hidden">
             {restaurant?.nom?.charAt(0) || "B"}
           </span>
+          {!isOnline && (
+            <span className="ml-auto lg:ml-2 px-2 py-0.5 bg-red-500/20 text-red-400 text-[10px] font-bold rounded-full uppercase tracking-wider border border-red-500/30 animate-pulse">
+              Hors-Ligne
+            </span>
+          )}
         </div>
 
         <nav className="flex-1 space-y-2 py-4 px-3">
@@ -106,9 +138,16 @@ export function AdminLayout() {
 
       {/* ── Mobile Top Navbar (< md) ────────────────────────────────────── */}
       <header className="no-print md:hidden fixed top-0 left-0 right-0 h-14 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 z-50 flex items-center justify-between px-4">
-        <span className="font-bold text-amber-500 text-xl tracking-tight truncate max-w-[200px]">
-          {restaurant?.nom || "BMS APP"}
-        </span>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-bold text-amber-500 text-xl tracking-tight truncate max-w-[200px]">
+            {restaurant?.nom || "BMS APP"}
+          </span>
+          {!isOnline && (
+            <span className="shrink-0 px-2 py-0.5 bg-red-500/20 text-red-400 text-[10px] font-bold rounded-full uppercase tracking-wider border border-red-500/30 animate-pulse">
+              Hors-Ligne
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-1">
           {hasNewWebOrder && (
             <button
@@ -229,6 +268,13 @@ export function AdminLayout() {
         isOpen={isWebOrdersModalOpen}
         onClose={() => setIsWebOrdersModalOpen(false)}
       />
+
+      {showOnboarding && (
+        <OnboardingTour onComplete={() => setShowOnboarding(false)} />
+      )}
+
+      {/* Lock Screen Overlay */}
+      {isLocked && staff.length > 0 && <LockScreen />}
     </div>
   );
 }

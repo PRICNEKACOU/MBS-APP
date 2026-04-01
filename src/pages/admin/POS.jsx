@@ -337,70 +337,72 @@ export function POS() {
 
       {/* RECEIPT MODAL FOR PREVIEW AND PRINT */}
       {receiptOrder && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm print:p-0 print:bg-transparent print:backdrop-blur-none" style={{ pointerEvents: 'auto' }}>
-          <div className="relative bg-white shadow-2xl rounded-2xl print:rounded-none flex flex-col w-[350px] print:w-auto print:shadow-none animate-in fade-in zoom-in-95 overflow-hidden">
-            
-            <div className="flex justify-between items-center p-4 border-b border-slate-200 print:hidden bg-slate-100">
-              <h3 className="font-bold text-slate-800">Aperçu du ticket</h3>
-              <button onClick={() => setReceiptOrder(null)} className="text-slate-400 hover:text-red-500">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm no-print" style={{ pointerEvents: 'auto' }}>
+          <div className="relative bg-white shadow-2xl rounded-2xl flex flex-col w-[350px] animate-in fade-in zoom-in-95 overflow-hidden">
+
+            <div className="flex justify-between items-center p-4 border-b border-slate-200 bg-slate-100 no-print">
+              <h3 className="font-bold text-slate-800">Apercu du ticket</h3>
+              <button onClick={() => setReceiptOrder(null)} className="text-slate-400 hover:text-red-500 no-print">
                 <X className="h-6 w-6" />
               </button>
             </div>
 
-            <div className="overflow-y-auto max-h-[70vh] print:max-h-none print:overflow-visible no-scrollbar p-6 print:p-0 flex justify-center bg-slate-50 print:bg-white">
-              
-              <div id="printable-receipt" className="font-mono text-sm leading-tight text-black bg-white shadow-sm print:shadow-none w-[300px] shrink-0 p-4" style={{ fontFamily: 'monospace' }}>
-                
+            <div className="overflow-y-auto max-h-[70vh] no-scrollbar p-6 flex justify-center bg-slate-50">
+
+              <div id="printable-receipt" className="font-mono text-sm leading-tight text-black bg-white shadow-sm w-[300px] shrink-0 p-4" style={{ fontFamily: "'Courier New', Courier, monospace" }}>
+
                 <div className="text-center mb-2">
-                  <h1 className="font-bold text-xl uppercase mb-1">BMS APP</h1>
-                  <p className="text-xs">
+                  <h1 className="font-bold text-lg uppercase mb-1">{restaurant?.nom || 'MBS APP'}</h1>
+                  <p className="text-[10px]">
                     {receiptOrder.date.toLocaleDateString('fr-FR')} - {receiptOrder.date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                   </p>
-                  <p className="text-xs mt-1">Ticket N°: {receiptOrder.id}</p>
-                  <p className="text-xs">Caissier: Admin POS</p>
-                  {receiptOrder.table && <p className="text-xs font-bold mt-1">Table {receiptOrder.table}</p>}
+                  <p className="text-[10px] mt-1">Ticket N: {receiptOrder.id}</p>
+                  {receiptOrder.table && <p className="text-[10px] font-bold mt-1">Table {receiptOrder.table}</p>}
                 </div>
 
-                <div className="text-center text-xs tracking-widest my-1 select-none">
-                  ----------------------
+                <div className="text-center text-[10px] tracking-widest my-1 select-none receipt-separator">
+                  ================================
                 </div>
 
-                <div className="flex flex-col space-y-1 my-2">
+                <div className="flex flex-col space-y-0.5 my-2">
                   {receiptOrder.items.map(item => (
-                    <div key={item.product.id} className="flex justify-between items-start text-xs">
-                      <span className="flex-1 pr-2 truncate">
-                        {item.quantity}x {item.product.name}
-                      </span>
-                      <span className="font-bold shrink-0">
-                        {formatPrice(item.sellingPrice * item.quantity, currency)}
-                      </span>
+                    <div key={item.product.id}>
+                      <div className="flex justify-between items-start text-[11px]">
+                        <span className="flex-1 pr-2">
+                          {item.quantity}x {item.product.name}
+                        </span>
+                        <span className="font-bold shrink-0">
+                          {formatPrice(item.sellingPrice * item.quantity, currency)}
+                        </span>
+                      </div>
                     </div>
                   ))}
                 </div>
 
-                <div className="text-center text-xs tracking-widest my-1 select-none">
-                  ----------------------
+                <div className="text-center text-[10px] tracking-widest my-1 select-none receipt-separator">
+                  ================================
                 </div>
 
-                <div className="flex justify-between items-center my-3 mx-1">
-                  <span className="text-lg font-extrabold uppercase">Total</span>
-                  <span className="text-xl font-extrabold">{formatPrice(receiptOrder.total, currency)}</span>
-                </div>
-                
-                <div className="text-center text-xs mt-2 uppercase font-bold">
-                  Paiement : {receiptOrder.paymentMethod || 'Espèces'}
+                <div className="flex justify-between items-center my-2">
+                  <span className="text-sm font-extrabold uppercase">TOTAL</span>
+                  <span className="text-base font-extrabold">{formatPrice(receiptOrder.total, currency)}</span>
                 </div>
 
-                <div className="text-center text-xs mt-6 mb-2">
-                  <p>Merci de votre visite</p>
-                  <p className="font-bold mt-1">Revenez vite !</p>
+                <div className="text-center text-[10px] mt-1 uppercase font-bold">
+                  Paiement : {receiptOrder.paymentMethod || 'Especes'}
+                </div>
+
+                <div className="text-center text-[10px] mt-4 mb-1">
+                  <p className="receipt-separator">--------------------------------</p>
+                  <p className="mt-1">Merci de votre visite !</p>
+                  <p className="font-bold">A bientot</p>
                 </div>
               </div>
 
             </div>
 
-            <div className="p-4 border-t border-slate-200 print:hidden bg-slate-100">
-              <Button onClick={() => window.print()} className="w-full flex justify-center py-3" variant="primary">
+            <div className="p-4 border-t border-slate-200 bg-slate-100 no-print">
+              <Button onClick={() => window.print()} className="w-full flex justify-center py-3 no-print" variant="primary">
                 <Printer className="w-5 h-5 mr-2" /> Imprimer le ticket
               </Button>
             </div>

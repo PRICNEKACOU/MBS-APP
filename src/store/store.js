@@ -104,14 +104,16 @@ export const useStore = create((set, get) => ({
         { data: orders },
         { data: movements },
         { data: cycles },
-        { data: expenses }
+        { data: expenses },
+        { data: staffData }
       ] = await Promise.all([
         insforge.database.from('products').select('*').eq('restaurant_id', get().auth.restaurant?.id).eq('archived', false),
         insforge.database.from('tables').select('*').eq('restaurant_id', get().auth.restaurant?.id),
         insforge.database.from('orders').select('*').eq('restaurant_id', get().auth.restaurant?.id),
         insforge.database.from('movements').select('*').eq('restaurant_id', get().auth.restaurant?.id),
         insforge.database.from('cycles').select('*').eq('restaurant_id', get().auth.restaurant?.id),
-        insforge.database.from('expenses').select('*').eq('restaurant_id', get().auth.restaurant?.id)
+        insforge.database.from('expenses').select('*').eq('restaurant_id', get().auth.restaurant?.id),
+        insforge.database.from('staff').select('*').eq('restaurant_id', get().auth.restaurant?.id).catch(() => ({ data: [] }))
       ]);
 
       // Simple flat mapping — no costBatches
@@ -133,6 +135,7 @@ export const useStore = create((set, get) => ({
         cycles: mappedCycles,
         currentCycle: mappedCycles.find(c => !c.endTime) || null,
         expenses: mappedExpenses,
+        staff: staffData || [],
         isLoading: false
       });
 
@@ -312,16 +315,31 @@ export const useStore = create((set, get) => ({
 
       set({ orders: [newOrder, ...orders], products: updatedProducts, tables: updatedTables, movements: [...newMovements, ...movements], cart: [] });
 
-      await Promise.all([
-        insforge.database.from('orders').insert([mapToDb(newOrder, orderMapping)]),
-        ...updatedProducts
+      // If offline, queue for later sync
+      if (!navigator.onLine) {
+        const stockUpdates = updatedProducts
           .filter(p => cart.find(i => i.product.id === p.id))
-          .map(p => insforge.database.from('products').update({ stock: p.stock }).eq('id', p.id).eq('restaurant_id', restaurantId)),
-        tableNumber && insforge.database.from('tables').update({ status: 'occupee' }).eq('number', tableNumber).eq('restaurant_id', restaurantId),
-        insforge.database.from('movements').insert(newMovements.map(m => mapToDb(m, movementMapping)))
-      ].filter(Boolean));
+          .map(p => ({ id: p.id, stock: p.stock }));
+        get().addToOfflineQueue({
+          type: 'order',
+          order: newOrder,
+          stockUpdates,
+          movements: newMovements,
+          tableUpdate: tableNumber || null
+        });
+        toast.success("Vente sauvegardee hors-ligne !");
+      } else {
+        await Promise.all([
+          insforge.database.from('orders').insert([mapToDb(newOrder, orderMapping)]),
+          ...updatedProducts
+            .filter(p => cart.find(i => i.product.id === p.id))
+            .map(p => insforge.database.from('products').update({ stock: p.stock }).eq('id', p.id).eq('restaurant_id', restaurantId)),
+          tableNumber && insforge.database.from('tables').update({ status: 'occupee' }).eq('number', tableNumber).eq('restaurant_id', restaurantId),
+          insforge.database.from('movements').insert(newMovements.map(m => mapToDb(m, movementMapping)))
+        ].filter(Boolean));
 
-      toast.success("Vente enregistrée !");
+        toast.success("Vente enregistrée !");
+      }
     } catch (err) {
       console.error(err);
       toast.error("Échec de la vente. Veuillez réessayer.");
@@ -679,4 +697,142 @@ export const useStore = create((set, get) => ({
 
   hasNewWebOrder: false,
   setHasNewWebOrder: (val) => set({ hasNewWebOrder: val }),
+
+  // ─── Offline Queue ───────────────────────────────────────────────────────
+  offlineQueue: JSON.parse(localStorage.getItem('mbs_offline_queue') || '[]'),
+
+  addToOfflineQueue: (entry) => {
+    const queue = [...get().offlineQueue, entry];
+    localStorage.setItem('mbs_offline_queue', JSON.stringify(queue));
+    set({ offlineQueue: queue });
+  },
+
+  syncOfflineQueue: async () => {
+    const queue = get().offlineQueue;
+    if (queue.length === 0) return;
+
+    const failed = [];
+    for (const entry of queue) {
+      try {
+        if (entry.type === 'order') {
+          await insforge.database.from('orders').insert([mapToDb(entry.order, orderMapping)]);
+          // Sync stock updates
+          for (const stockUpdate of entry.stockUpdates) {
+            await insforge.database.from('products').update({ stock: stockUpdate.stock }).eq('id', stockUpdate.id).eq('restaurant_id', entry.order.restaurant_id);
+          }
+          // Sync movements
+          if (entry.movements?.length) {
+            await insforge.database.from('movements').insert(entry.movements.map(m => mapToDb(m, movementMapping)));
+          }
+          // Sync table status
+          if (entry.tableUpdate) {
+            await insforge.database.from('tables').update({ status: 'occupee' }).eq('number', entry.tableUpdate).eq('restaurant_id', entry.order.restaurant_id);
+          }
+        }
+      } catch (err) {
+        console.error('Sync failed for entry:', entry, err);
+        failed.push(entry);
+      }
+    }
+    localStorage.setItem('mbs_offline_queue', JSON.stringify(failed));
+    set({ offlineQueue: failed });
+    if (failed.length === 0 && queue.length > 0) {
+      toast.success(`${queue.length} commande(s) synchronisee(s) !`);
+    } else if (failed.length > 0) {
+      toast.error(`${failed.length} commande(s) en attente de sync.`);
+    }
+  },
+
+  // ─── Staff (PIN-based sub-accounts) ─────────────────────────────────────
+  staff: [],
+  activeStaff: null, // { id, name, role } of current PIN-authenticated user
+  isLocked: false,
+
+  setActiveStaff: (member) => set({ activeStaff: member, isLocked: false }),
+  lockScreen: () => set({ isLocked: true, activeStaff: null }),
+
+  fetchStaff: async () => {
+    try {
+      const restaurantId = get().auth.restaurant?.id;
+      if (!restaurantId) return;
+      const { data } = await insforge.database.from('staff').select('*').eq('restaurant_id', restaurantId);
+      set({ staff: data || [] });
+    } catch (err) {
+      console.error('Failed to fetch staff:', err);
+    }
+  },
+
+  addStaffMember: async (name, pinCode, role = 'waiter') => {
+    const previousStaff = get().staff;
+    try {
+      const restaurantId = get().auth.restaurant?.id;
+      if (!restaurantId) throw new Error("ID Restaurant manquant.");
+
+      // Check PIN uniqueness
+      if (get().staff.some(s => s.pin_code === pinCode)) {
+        toast.error("Ce code PIN est deja utilise.");
+        return false;
+      }
+
+      const newMember = {
+        id: 'STF-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+        restaurant_id: restaurantId,
+        name,
+        role,
+        pin_code: pinCode
+      };
+      set(state => ({ staff: [newMember, ...state.staff] }));
+      await insforge.database.from('staff').insert([newMember]);
+      toast.success("Membre ajoute !");
+      return true;
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur lors de l'ajout.");
+      set({ staff: previousStaff });
+      return false;
+    }
+  },
+
+  removeStaffMember: async (staffId) => {
+    const previousStaff = get().staff;
+    try {
+      const restaurantId = get().auth.restaurant?.id;
+      set(state => ({ staff: state.staff.filter(s => s.id !== staffId) }));
+      await insforge.database.from('staff').delete().eq('id', staffId).eq('restaurant_id', restaurantId);
+      toast.success("Membre supprime.");
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur de suppression.");
+      set({ staff: previousStaff });
+    }
+  },
+
+  updateStaffPin: async (staffId, newPin) => {
+    const previousStaff = get().staff;
+    try {
+      if (get().staff.some(s => s.id !== staffId && s.pin_code === newPin)) {
+        toast.error("Ce code PIN est deja utilise.");
+        return false;
+      }
+      const restaurantId = get().auth.restaurant?.id;
+      set(state => ({ staff: state.staff.map(s => s.id === staffId ? { ...s, pin_code: newPin } : s) }));
+      await insforge.database.from('staff').update({ pin_code: newPin }).eq('id', staffId).eq('restaurant_id', restaurantId);
+      toast.success("Code PIN mis a jour.");
+      return true;
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur de mise a jour.");
+      set({ staff: previousStaff });
+      return false;
+    }
+  },
+
+  verifyPin: (pin) => {
+    const member = get().staff.find(s => s.pin_code === pin);
+    if (member) {
+      set({ activeStaff: { id: member.id, name: member.name, role: member.role }, isLocked: false });
+      return member;
+    }
+    return null;
+  },
 }));

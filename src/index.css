@@ -10,7 +10,7 @@
   }
 }
 
-/* Custom utilities for hidden scrollbars, print styles, etc. */
+/* Custom utilities for hidden scrollbars */
 @layer utilities {
   .no-scrollbar::-webkit-scrollbar {
     display: none;
@@ -21,51 +21,96 @@
   }
 }
 
-/* Print Styles — POS Receipt */
+/* ── Shake animation (LockScreen PIN error) ───────────────────────────────── */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-8px); }
+  40%, 80% { transform: translateX(8px); }
+}
+.animate-shake {
+  animation: shake 0.4s ease-in-out;
+}
+
+/* ── PRINT — Ticket Thermique 80mm ─────────────────────────────────────────── */
 @media print {
   @page {
     margin: 0;
     size: 80mm auto;
   }
 
-  /* Default: hide everything */
-  body * { visibility: hidden; }
-
-  /* POS Receipt print */
-  #printable-receipt,
-  #printable-receipt * {
-    visibility: visible;
-  }
-  #printable-receipt {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 300px !important;
-    max-width: 300px !important;
-    padding: 10px !important;
+  /* Reset complet : tout masquer */
+  html, body {
     margin: 0 !important;
-    background-color: white !important;
-    color: black !important;
-  }
-
-  /* Point Global print — only when #pg-printable is present and receipt is NOT */
-  body:not(:has(#printable-receipt)) #pg-printable,
-  body:not(:has(#printable-receipt)) #pg-printable * {
-    visibility: visible;
-  }
-  body:not(:has(#printable-receipt)) #pg-printable {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 80mm;
+    padding: 0 !important;
+    width: 80mm !important;
+    min-height: auto !important;
     background: white !important;
     color: black !important;
-    padding: 10px;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    overflow: visible !important;
   }
 
-  /* Always hide nav/sidebar during print */
-  .no-print {
-    display: none !important;
+  /* Phase 1 : TOUT cacher */
+  body * {
     visibility: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Phase 2 : Masquer complètement les éléments UI (display:none pour ne pas occuper d'espace) */
+  .no-print,
+  aside,
+  header,
+  nav,
+  footer,
+  .backdrop-blur-sm,
+  .backdrop-blur-md,
+  [class*="print\\:hidden"] {
+    display: none !important;
+  }
+
+  /* Phase 3 : Seul le ticket est visible */
+  #printable-receipt,
+  #printable-receipt * {
+    visibility: visible !important;
+  }
+
+  #printable-receipt {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 80mm !important;
+    max-width: 80mm !important;
+    padding: 2mm 3mm !important;
+    margin: 0 !important;
+    background: white !important;
+    color: black !important;
+    font-family: 'Courier New', Courier, monospace !important;
+    font-size: 12px !important;
+    line-height: 1.4 !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+  }
+
+  /* Réactiver les éléments DANS le ticket avec padding/margin restaurés */
+  #printable-receipt span,
+  #printable-receipt p,
+  #printable-receipt h1,
+  #printable-receipt h2,
+  #printable-receipt div {
+    color: black !important;
+    background: white !important;
+    padding: revert !important;
+    margin: revert !important;
+  }
+
+  /* Séparateurs du ticket */
+  #printable-receipt .receipt-separator {
+    letter-spacing: 0.05em;
+    padding: 0 !important;
+    margin: 2px 0 !important;
   }
 }
