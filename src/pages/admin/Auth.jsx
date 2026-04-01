@@ -283,21 +283,22 @@ export const Auth = () => {
 
   // ── Création du restaurant APRÈS session valide ──────────────────────────────
   const createRestaurantAndProfile = async (userId, { restaurantName: rName, userName: uName, email: uEmail, pin: uPin }) => {
-    // Créer le restaurant (session valide = RLS passe)
-    const { data: newRestaurant, error: restError } = await insforge.database
+    // Générer l'ID du restaurant côté client pour éviter le .select() après insert
+    // (.select() déclenche un SELECT soumis au RLS, mais l'utilisateur n'est pas encore dans bms_users)
+    const restaurantId = crypto.randomUUID();
+
+    const { error: restError } = await insforge.database
       .from('restaurants')
-      .insert([{ nom: rName }])
-      .select()
-      .single();
+      .insert([{ id: restaurantId, nom: rName }]);
 
     if (restError) throw new Error(`Restaurant: ${restError.message}`);
 
-    // Créer le profil bms_users
+    // Créer le profil bms_users (maintenant get_my_restaurant_id() pourra fonctionner)
     const { data: newUser, error: userError } = await insforge.database
       .from('bms_users')
       .insert([{
         id: userId,
-        restaurant_id: newRestaurant.id,
+        restaurant_id: restaurantId,
         nom: uName,
         email: uEmail,
         pin_code: uPin,
@@ -308,7 +309,7 @@ export const Auth = () => {
 
     if (userError) throw new Error(`Profil: ${userError.message}`);
 
-    setAuth({ isAuthenticated: true, user: newUser, restaurant: newRestaurant });
+    setAuth({ isAuthenticated: true, user: newUser, restaurant: { id: restaurantId, nom: rName } });
     await initializeStore();
     navigate('/pos');
   };
