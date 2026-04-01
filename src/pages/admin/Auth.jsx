@@ -188,10 +188,10 @@ export const Auth = () => {
 
     try {
       // On utilise le bon type selon le flux (inscription vs connexion)
-      const otpPayload = { email, token: cleanToken, type: otpType };
+      const otpPayload = { email, otp: cleanToken };
       console.log("ENVOI INFORGE -> Email:", email, "| Token:", cleanToken, "| Longueur:", cleanToken.length);
       
-      const { data: authData, error: otpError } = await insforge.auth.verifyOtp(otpPayload);
+      const { data: authData, error: otpError } = await insforge.auth.verifyEmail(otpPayload);
 
       if (otpError) throw otpError;
       if (!authData?.user) throw new Error('Session invalide après vérification.');
