@@ -490,9 +490,14 @@ export const useStore = create((set, get) => ({
         movements: newMovement ? [newMovement, ...state.movements] : state.movements
       }));
 
-      await insforge.database.from('products').insert([mapToDb(newProduct, productMapping)]);
+      const { error: insertError } = await insforge.database.from('products').insert([mapToDb(newProduct, productMapping)]);
+      if (insertError) {
+        console.error("Erreur InForge Insert produit:", insertError);
+        throw new Error(insertError.message || "Échec insertion produit");
+      }
       if (newMovement) {
-        await insforge.database.from('movements').insert([mapToDb(newMovement, movementMapping)]);
+        const { error: movError } = await insforge.database.from('movements').insert([mapToDb(newMovement, movementMapping)]);
+        if (movError) console.error("Erreur InForge Insert mouvement:", movError);
       }
       toast.success("Produit ajouté !");
     } catch (err) {
