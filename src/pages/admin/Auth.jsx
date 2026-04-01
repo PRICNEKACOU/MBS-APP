@@ -196,15 +196,21 @@ export const Auth = () => {
       if (otpError) throw otpError;
       if (!authData?.user) throw new Error('Session invalide après vérification.');
 
-      // ✅ Session valide
-      toast.success('✅ Compte validé ! Bienvenue !', {
+      // ✅ Email vérifié
+      toast.success('Compte validé ! Bienvenue !', {
         duration: 3000,
         style: { background: '#1e293b', color: '#fbbf24', border: '1px solid #f59e0b40' }
       });
 
       if (pendingRegistration) {
-        // Flux inscription : créer le restaurant + profil
-        await createRestaurantAndProfile(authData.user.id, pendingRegistration);
+        // Flux inscription : se reconnecter pour obtenir une session authentifiée complète
+        // (verifyEmail ne garantit pas toujours une session avec les bons droits RLS)
+        const { data: loginData, error: loginError } = await insforge.auth.signInWithPassword({
+          email: pendingRegistration.email,
+          password: pendingRegistration.pin
+        });
+        if (loginError) throw loginError;
+        await createRestaurantAndProfile(loginData.user.id, pendingRegistration);
       } else {
         // Flux connexion : charger le profil existant
         await finalizeLogin(authData);
