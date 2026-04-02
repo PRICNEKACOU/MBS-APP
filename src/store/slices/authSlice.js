@@ -11,7 +11,9 @@ const savedAuth = (() => {
 export { savedAuth };
 
 export const createAuthSlice = (set, get) => ({
-  isLoading: savedAuth.isAuthenticated,
+  // isLoading: true si l'utilisateur est déjà authentifié (sera mis à false après initializeStore)
+  // Cela bloque les composants enfants PENDANT le rechargement des données au démarrage
+  isLoading: savedAuth.isAuthenticated ? true : false,
   isSyncing: false,
   language: 'fr',
   setLanguage: (language) => set({ language }),
