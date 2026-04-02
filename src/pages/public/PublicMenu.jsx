@@ -36,12 +36,14 @@ export function PublicMenu() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const [{ data: prods }, { data: restos }] = await Promise.all([
-          insforge.database.from('products').select('*').eq('restaurant_id', restaurantId).eq('archived', false),
-          insforge.database.from('restaurants').select('*').eq('id', restaurantId)
-        ]);
-        setProducts((prods || []).filter(p => p.stock > 0));
-        setRestaurant(restos?.[0] || null);
+        const { data, error: rpcError } = await insforge.database.rpc('get_public_menu', { 
+          p_restaurant_id: restaurantId 
+        });
+        
+        if (rpcError) throw rpcError;
+        
+        setProducts(data.products || []);
+        setRestaurant(data.restaurant || null);
       } catch (err) {
         console.error(err);
         setError("Impossible de charger le menu.");
@@ -87,19 +89,17 @@ export function PublicMenu() {
     if (clientCart.length === 0 || isSubmitting) return;
     setIsSubmitting(true);
     try {
-      const newOrder = {
-        id: 'WEB-' + Math.random().toString(36).substr(2, 6).toUpperCase(),
-        items: clientCart,
-        total: cartTotal,
-        table_number: tableId ? Number(tableId) : null,
-        status: 'pending',
-        timestamp: new Date().toISOString(),
-        restaurant_id: restaurantId
-      };
-      await insforge.database.from('orders').insert([newOrder]);
-      if (tableId) {
-        await insforge.database.from('tables').update({ status: 'service_demande' }).eq('number', Number(tableId)).eq('restaurant_id', restaurantId);
-      }
+      const newOrderId = 'WEB-' + Math.random().toString(36).substr(2, 6).toUpperCase();
+      
+      const { error: rpcError } = await insforge.database.rpc('submit_public_order', {
+        p_order_id: newOrderId,
+        p_items: clientCart,
+        p_total: cartTotal,
+        p_table_number: tableId ? Number(tableId) : null,
+        p_restaurant_id: restaurantId
+      });
+
+      if (rpcError) throw rpcError;
       setClientCart([]);
       setIsOrderPlaced(true);
     } catch (err) {

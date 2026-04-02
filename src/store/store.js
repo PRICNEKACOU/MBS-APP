@@ -62,39 +62,58 @@ export const useStore = create((set, get) => ({
       set({ isLoading: false });
       return;
     }
-    set({ isLoading: true });
-    try {
-      const restaurantId = get().auth.restaurant?.id;
 
+    const restaurantId = get().auth.restaurant?.id;
+    if (!restaurantId) {
+      console.error("InitializeStore: No restaurantId found.");
+      set({ isLoading: false });
+      return;
+    }
+
+    set({ isLoading: true });
+
+    // Helper to catch errors per query
+    const safeQuery = async (queryPromise, fallback = []) => {
+      try {
+        const { data, error } = await queryPromise;
+        if (error) throw error;
+        return data || fallback;
+      } catch (err) {
+        console.error(`Query failed:`, err);
+        return fallback;
+      }
+    };
+
+    try {
       const [
-        { data: products },
-        { data: tables },
-        { data: orders },
-        { data: movements },
-        { data: cycles },
-        { data: expenses },
-        { data: staffData }
+        products,
+        tables,
+        orders,
+        movements,
+        cycles,
+        expenses,
+        staffData
       ] = await Promise.all([
-        insforge.database.from('products').select('*').eq('restaurant_id', restaurantId).eq('archived', false),
-        insforge.database.from('tables').select('*').eq('restaurant_id', restaurantId),
-        insforge.database.from('orders').select('*').eq('restaurant_id', restaurantId),
-        insforge.database.from('movements').select('*').eq('restaurant_id', restaurantId),
-        insforge.database.from('cycles').select('*').eq('restaurant_id', restaurantId),
-        insforge.database.from('expenses').select('*').eq('restaurant_id', restaurantId),
-        insforge.database.from('staff').select('*').eq('restaurant_id', restaurantId).catch(() => ({ data: [] }))
+        safeQuery(insforge.database.from('products').select('*').eq('restaurant_id', restaurantId).eq('archived', false)),
+        safeQuery(insforge.database.from('tables').select('*').eq('restaurant_id', restaurantId)),
+        safeQuery(insforge.database.from('orders').select('*').eq('restaurant_id', restaurantId)),
+        safeQuery(insforge.database.from('movements').select('*').eq('restaurant_id', restaurantId)),
+        safeQuery(insforge.database.from('cycles').select('*').eq('restaurant_id', restaurantId)),
+        safeQuery(insforge.database.from('expenses').select('*').eq('restaurant_id', restaurantId)),
+        safeQuery(insforge.database.from('staff').select('*').eq('restaurant_id', restaurantId))
       ]);
 
-      const mappedProducts  = (products  || []).map(p => ({ ...mapFromDb(p, productMapping), costPrice: p.cost_price ?? null }));
-      const mappedOrders    = (orders    || []).map(o => mapFromDb(o, orderMapping));
-      const mappedCycles    = (cycles    || []).map(c => mapFromDb(c, cycleMapping));
-      const mappedMovements = (movements || []).map(m => mapFromDb(m, movementMapping));
-      const mappedExpenses  = (expenses  || []).map(e => mapFromDb(e, expenseMapping));
+      const mappedProducts  = products.map(p => ({ ...mapFromDb(p, productMapping), costPrice: p.cost_price ?? null }));
+      const mappedOrders    = orders.map(o => mapFromDb(o, orderMapping));
+      const mappedCycles    = cycles.map(c => mapFromDb(c, cycleMapping));
+      const mappedMovements = movements.map(m => mapFromDb(m, movementMapping));
+      const mappedExpenses  = expenses.map(e => mapFromDb(e, expenseMapping));
 
       const savedQueue = await getAllOffline().catch(() => []);
 
       set({
         products: mappedProducts,
-        tables: (tables || []).length > 0 ? tables : mockTables,
+        tables: tables.length > 0 ? tables : mockTables,
         orders: mappedOrders,
         movements: mappedMovements,
         cycles: mappedCycles,
@@ -145,7 +164,7 @@ export const useStore = create((set, get) => ({
 
     } catch (err) {
       console.error('Failed to initialize store:', err);
-      toast.error("Échec de la connexion au serveur.");
+      toast.error("Échec du chargement sélectif des données.");
       set({ isLoading: false });
     }
   },

@@ -15,7 +15,7 @@ export const createCyclesSlice = (set, get) => ({
       if (closedToday) {
         const reopened = { ...closedToday, endTime: null, endStock: null, closedBy: undefined };
         set({ currentCycle: reopened, cycles: get().cycles.map(c => c.id === reopened.id ? reopened : c) });
-        await insforge.database.from('cycles').update(mapToDb(reopened, cycleMapping)).eq('id', reopened.id);
+        await insforge.database.from('cycles').update(mapToDb(reopened, cycleMapping)).eq('id', reopened.id).eq('restaurant_id', get().auth.restaurant?.id);
         toast.success("Service du jour réouvert.");
         return;
       }
@@ -43,7 +43,7 @@ export const createCyclesSlice = (set, get) => ({
       const endStock = get().products.map(p => ({ productId: p.id, name: p.name, stock: p.stock }));
       const finished = { ...cycle, endTime: new Date().toISOString(), endStock, closedBy };
       set({ currentCycle: null, cycles: get().cycles.map(c => c.id === finished.id ? finished : c) });
-      await insforge.database.from('cycles').update(mapToDb(finished, cycleMapping)).eq('id', finished.id);
+      await insforge.database.from('cycles').update(mapToDb(finished, cycleMapping)).eq('id', finished.id).eq('restaurant_id', get().auth.restaurant?.id);
       toast.success("Service clôturé avec succès.");
     } catch (err) {
       console.error(err);

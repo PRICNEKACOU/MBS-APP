@@ -94,7 +94,7 @@ export const createOrdersSlice = (set, get) => ({
       orders: state.orders.map(o => o.id === orderId ? { ...o, status: 'cancelled' } : o),
       hasNewWebOrder: state.orders.filter(o => o.id !== orderId && o.status === 'pending').length > 0
     }));
-    await insforge.database.from('orders').update({ status: 'cancelled' }).eq('id', orderId);
+    await insforge.database.from('orders').update({ status: 'cancelled' }).eq('id', orderId).eq('restaurant_id', get().auth.restaurant?.id);
   },
 
   cancelOrder: (orderId) => set(state => {
