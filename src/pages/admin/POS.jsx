@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Search, ShoppingCart, X, Plus, Minus, Trash2, Printer, Image, Lock, Edit2, Check, Power } from "lucide-react";
 import { useStore } from "../../store/store";
 import { formatPrice } from "../../utils/currency";
@@ -6,6 +6,7 @@ import { Button } from "../../components/ui/Button";
 import { ProductCard } from "../../components/ui/ProductCard";
 import { cn } from "../../utils/utils";
 import { useTranslation } from "../../utils/i18n";
+import { LockScreen } from "../../components/admin/LockScreen";
 
 const CFA_RATE = 655.957;
 
@@ -29,7 +30,14 @@ function CartImage({ src, alt, className }) {
 export function POS() {
   const t = useTranslation();
   const { products, cart, removeFromCart, updateCartQuantity, clearCart, checkout, tables, currency, currentCycle, updateCartItemPrice, openCycle, closeCycle } = useStore();
-  
+
+  // ── Sécurité au démarrage : verrouillage par staff actif ─────────────────
+  const activeStaff = useStore(state => state.activeStaff);
+  const lockScreen  = useStore(state => state.lockScreen);
+  const staff       = useStore(state => state.staff);
+  const isLoading   = useStore(state => state.isLoading);
+
+  // ── Tous les useState AVANT les retours conditionnels (règle des hooks) ───
   const [searchTerm, setSearchTerm] = useState("");
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [selectedTable, setSelectedTable] = useState("");
@@ -37,6 +45,23 @@ export function POS() {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [editingPriceId, setEditingPriceId] = useState(null);
   const [tempPrice, setTempPrice] = useState("");
+
+  // staffExists : null pendant le chargement initial du store, boolean ensuite
+  const staffExists = isLoading ? null : staff.length > 0;
+
+  // Pendant le chargement initial du store → spinner neutre
+  if (staffExists === null) {
+    return (
+      <div className="flex h-[100dvh] bg-slate-950 items-center justify-center">
+        <div className="w-10 h-10 border-4 border-amber-500/20 border-t-amber-500 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // Si des serveurs existent ET qu'aucun n'est actif → LockScreen (sécurité démarrage)
+  if (staffExists && activeStaff === null) {
+    return <LockScreen />;
+  }
 
   if (!currentCycle) {
     return (
@@ -102,6 +127,21 @@ export function POS() {
         <div className="flex flex-col md:flex-row gap-4 items-center justify-between p-4 border-b border-slate-800 bg-slate-900 z-10">
           <div className="flex items-center gap-4 w-full md:w-auto">
             <h1 className="text-2xl font-bold text-slate-100 hidden md:block">{t('pos.title')}</h1>
+
+            {/* Serveur actif + bouton Changer */}
+            {activeStaff && (
+              <button
+                onClick={lockScreen}
+                data-slot="lock-pos-btn"
+                className="flex items-center gap-2 bg-slate-800 hover:bg-amber-500/10 hover:border-amber-500/30 border border-slate-700 text-slate-300 hover:text-amber-400 text-sm px-3 py-2 rounded-lg transition-all active:scale-95"
+                title="Verrouiller / Changer de serveur"
+              >
+                <Lock className="w-4 h-4" />
+                <span className="hidden md:inline font-medium">{activeStaff.name}</span>
+                <span className="hidden md:inline text-slate-500 text-xs">· Changer</span>
+              </button>
+            )}
+
             <button 
               onClick={() => {
                 if(window.confirm("Voulez-vous vraiment clôturer ce service ? Toutes les écritures de ce cycle seront formellement validées et le stock réel figé.")) {
