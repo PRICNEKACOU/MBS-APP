@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import { Lock, Delete, Coffee } from "lucide-react";
 import { useStore } from "../../store/store";
 
@@ -8,15 +8,17 @@ export function LockScreen() {
   const [shake, setShake] = useState(false);
   const verifyPin = useStore(state => state.verifyPin);
   const restaurant = useStore(state => state.auth.restaurant);
+  const isVerifying = useRef(false);
 
   const handleDigit = useCallback((digit) => {
     setError(false);
     setPin(prev => {
       const next = prev + digit;
-      if (next.length === 4) {
-        // Auto-verify on 4th digit
-        setTimeout(() => {
-          const member = verifyPin(next);
+      if (next.length === 4 && !isVerifying.current) {
+        isVerifying.current = true;
+        setTimeout(async () => {
+          const member = await verifyPin(next);
+          isVerifying.current = false;
           if (!member) {
             setError(true);
             setShake(true);

@@ -378,7 +378,15 @@ export function Inventory() {
                       <td className="p-4 text-slate-400">{product.category}</td>
                       <td className="p-4 font-mono text-slate-300">{formatPrice(product.price, currency)}</td>
                       <td className="p-4 font-mono text-slate-400 text-xs">
-                        {product.costPrice > 0 ? formatPrice(product.costPrice, currency) : <span className="text-slate-600 italic">N/A</span>}
+                        {product.costPrice != null && product.costPrice > 0
+                          ? formatPrice(product.costPrice)
+                          : (
+                            <span className="inline-flex items-center gap-1 text-amber-500" title="Coût d'achat non saisi — la marge et le CUMP seront incorrects">
+                              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                              Non défini
+                            </span>
+                          )
+                        }
                       </td>
                       <td className="p-4 font-mono">
                         <span className={isOutOfStock ? "text-red-500" : isLowStock ? "text-amber-500" : "text-emerald-500"}>

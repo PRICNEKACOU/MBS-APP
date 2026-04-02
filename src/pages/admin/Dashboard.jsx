@@ -16,7 +16,7 @@ import { calculateHistoricalStock } from "../../utils/stock";
 const CFA_RATE = 655.957;
 
 // ─── Order Detail Modal ───────────────────────────────────────────────────────
-export function OrderDetailModal({ order, onClose, currency, formatPrice }) {
+export function OrderDetailModal({ order, onClose, currency }) {
   if (!order) return null;
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
@@ -1429,7 +1429,6 @@ export function Dashboard() {
         order={selectedOrderDetails}
         onClose={() => setSelectedOrderDetails(null)}
         currency={currency}
-        formatPrice={formatPrice}
       />
     </div>
   );

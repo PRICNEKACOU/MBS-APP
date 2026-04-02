@@ -28,6 +28,19 @@ export const Auth = () => {
   const [resendCooldown, setResendCooldown] = useState(0);
   const cooldownRef = useRef(null);
 
+  // Rate limiting — tentatives login
+  const [loginAttempts, setLoginAttempts] = useState(0);
+  const [loginLockedUntil, setLoginLockedUntil] = useState(null);
+
+  // Rate limiting — tentatives OTP
+  const [otpAttempts, setOtpAttempts] = useState(0);
+  const [otpLockedUntil, setOtpLockedUntil] = useState(null);
+
+  const LOGIN_MAX_ATTEMPTS = 5;
+  const LOGIN_LOCKOUT_MS   = 10 * 60 * 1000; // 10 minutes
+  const OTP_MAX_ATTEMPTS   = 5;
+  const OTP_LOCKOUT_MS     = 10 * 60 * 1000; // 10 minutes
+
   // OTP input : 6 cases individuelles
   const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', '']);
   const otpRefs = useRef([]);
@@ -113,8 +126,17 @@ export const Auth = () => {
   // ── Connexion ──────────────────────────────────────────────────
   const handleLogin = async (e) => {
     e.preventDefault();
-    setIsLoading(true);
     setError(null);
+
+    // Vérifier le verrouillage login
+    const now = Date.now();
+    if (loginLockedUntil && now < loginLockedUntil) {
+      const remaining = Math.ceil((loginLockedUntil - now) / 60000);
+      setError(`Trop de tentatives. Réessayez dans ${remaining} minute(s).`);
+      return;
+    }
+
+    setIsLoading(true);
 
     try {
       const { data: authData, error: authError } = await insforge.auth.signInWithPassword({
@@ -151,7 +173,15 @@ export const Auth = () => {
         setError(null);
         startCooldown(60);
       } else {
-        setError(msg.includes('invalid login credentials') ? 'Email ou code PIN incorrect.' : err.message || 'Erreur lors de la connexion.');
+        // Incrémenter le compteur de tentatives login
+        const newCount = loginAttempts + 1;
+        setLoginAttempts(newCount);
+        if (newCount >= LOGIN_MAX_ATTEMPTS) {
+          setLoginLockedUntil(Date.now() + LOGIN_LOCKOUT_MS);
+          setError(`5 tentatives échouées. Accès bloqué pendant 10 minutes.`);
+        } else {
+          setError(msg.includes('invalid login credentials') ? `Email ou code PIN incorrect. (${newCount}/${LOGIN_MAX_ATTEMPTS} tentatives)` : err.message || 'Erreur lors de la connexion.');
+        }
       }
     } finally {
       setIsLoading(false);
@@ -183,6 +213,15 @@ export const Auth = () => {
       setError('Veuillez saisir les 6 chiffres du code.');
       return;
     }
+
+    // Vérifier le verrouillage OTP
+    const nowOtp = Date.now();
+    if (otpLockedUntil && nowOtp < otpLockedUntil) {
+      const remaining = Math.ceil((otpLockedUntil - nowOtp) / 60000);
+      setError(`Trop de tentatives. Réessayez dans ${remaining} minute(s).`);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
@@ -196,7 +235,9 @@ export const Auth = () => {
       if (otpError) throw otpError;
       if (!authData?.user) throw new Error('Session invalide après vérification.');
 
-      // ✅ Email vérifié
+      // ✅ Email vérifié — réinitialiser le rate limiting OTP
+      setOtpAttempts(0);
+      setOtpLockedUntil(null);
       toast.success('Compte validé ! Bienvenue !', {
         duration: 3000,
         style: { background: '#1e293b', color: '#fbbf24', border: '1px solid #f59e0b40' }
@@ -221,8 +262,22 @@ export const Auth = () => {
       const isInvalid = err.message?.toLowerCase().includes('expired')
         || err.message?.toLowerCase().includes('invalid')
         || err.message?.toLowerCase().includes('otp');
+
+      // Incrémenter le compteur OTP sur code invalide
+      if (isInvalid) {
+        const newOtpCount = otpAttempts + 1;
+        setOtpAttempts(newOtpCount);
+        if (newOtpCount >= OTP_MAX_ATTEMPTS) {
+          setOtpLockedUntil(Date.now() + OTP_LOCKOUT_MS);
+          setError('Trop de tentatives. Demandez un nouveau code et réessayez dans 10 minutes.');
+          setOtpDigits(['', '', '', '', '', '']);
+          toast.error('Compte OTP bloqué. Renvoyez un code.', { style: { background: '#1e293b', color: '#f87171', border: '1px solid #ef444440' } });
+          return;
+        }
+      }
+
       const msg = isInvalid
-        ? 'Code incorrect ou expiré. Cliquez sur « Renvoyer » pour obtenir un nouveau code.'
+        ? `Code incorrect ou expiré. (${otpAttempts + 1}/${OTP_MAX_ATTEMPTS}) Cliquez sur « Renvoyer » pour un nouveau code.`
         : err.message || 'Erreur lors de la vérification.';
       setError(msg);
       toast.error(msg, {
