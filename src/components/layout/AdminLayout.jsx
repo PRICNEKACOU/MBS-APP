@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Outlet, NavLink } from "react-router-dom";
-import { Coffee, Package, LayoutDashboard, Grid2x2, BellRing, Menu, X, LogOut, HelpCircle, Settings, AlertTriangle } from "lucide-react";
+import { Coffee, Package, LayoutDashboard, Grid2x2, BellRing, Menu, X, LogOut, HelpCircle, Settings } from "lucide-react";
 import { cn } from "../../utils/utils";
 import { useStore } from "../../store/store";
 import { useTranslation } from "../../utils/i18n";
@@ -8,7 +8,7 @@ import { WebOrdersModal } from "../admin/WebOrdersModal";
 import { OnboardingTour } from "../admin/OnboardingTour";
 import { LockScreen } from "../admin/LockScreen";
 import { useOnlineStatus } from "../../hooks/useOnlineStatus";
-import { isCfaRateStale, CFA_RATE_UPDATED_AT } from "../../utils/currency";
+
 
 const navItems = [
   { path: "/pos", icon: Coffee, label: "nav.pos" },
@@ -39,7 +39,7 @@ export function AdminLayout() {
   const [isWebOrdersModalOpen, setIsWebOrdersModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const [showRateWarning, setShowRateWarning] = useState(isCfaRateStale);
+
 
   // Auto-sync when back online
   useEffect(() => {
@@ -263,23 +263,6 @@ export function AdminLayout() {
 
       {/* ── Main Content ─────────────────────────────────────────────────── */}
       <main className="flex-1 min-w-0 flex flex-col md:ml-24 lg:ml-64 mt-14 md:mt-0 transition-all overflow-x-hidden">
-        {/* Avertissement taux CFA > 30 jours */}
-        {showRateWarning && (
-          <div className="flex items-center gap-3 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2.5 text-amber-400 text-xs">
-            <AlertTriangle className="w-4 h-4 shrink-0" />
-            <span>
-              Le taux de change FCFA n'a pas été vérifié depuis le{' '}
-              <strong>{CFA_RATE_UPDATED_AT.toLocaleDateString('fr-FR')}</strong>.
-              Vérifiez que 1&nbsp;€ = 655,957&nbsp;FCFA est toujours en vigueur.
-            </span>
-            <button
-              onClick={() => setShowRateWarning(false)}
-              className="ml-auto shrink-0 text-amber-500 hover:text-amber-300 font-bold text-xs"
-            >
-              ✕
-            </button>
-          </div>
-        )}
         <Outlet />
       </main>
 
