@@ -378,7 +378,7 @@ export function POS() {
 
       {/* RECEIPT MODAL FOR PREVIEW AND PRINT */}
       {receiptOrder && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm no-print" style={{ pointerEvents: 'auto' }}>
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-[4px]" style={{ pointerEvents: 'auto' }}>
           <div className="relative bg-white shadow-2xl rounded-2xl flex flex-col w-[350px] animate-in fade-in zoom-in-95 overflow-hidden">
 
             <div className="flex justify-between items-center p-4 border-b border-slate-200 bg-slate-100 no-print">
