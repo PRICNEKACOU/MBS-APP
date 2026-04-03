@@ -70,7 +70,8 @@ export const createCartSlice = (set, get) => ({
       const updatedProducts = products.map(p => {
         const cartItem = cart.find(i => i.product.id === p.id);
         if (!cartItem) return p;
-        return { ...p, stock: Math.max(0, p.stock - cartItem.quantity) };
+        const currentStock = p.stock != null ? Number(p.stock) : 0;
+        return { ...p, stock: Math.max(0, currentStock - cartItem.quantity) };
       });
 
       const newOrder = {
@@ -129,8 +130,8 @@ export const createCartSlice = (set, get) => ({
         toast.success("Vente enregistrée !");
       }
     } catch (err) {
-      console.error(err);
-      toast.error("Échec de la vente. Veuillez réessayer.");
+      console.error("[Checkout] Erreur brute :", err);
+      toast.error("DEBUG: " + JSON.stringify(err, Object.getOwnPropertyNames(err)));
       set(previousState);
     }
   },
