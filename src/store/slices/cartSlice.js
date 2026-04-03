@@ -6,23 +6,31 @@ export const createCartSlice = (set, get) => ({
   cart: [],
 
   addToCart: (product) => set(state => {
-    // Normalisation des types — guard contre les strings venant du formulaire ou d'un mapping partiel
+    // Normalisation des types avec garde null-safe
+    // stock null/undefined = non renseigné → on autorise l'ajout (pas épuisé)
+    // stock === 0          = épuisé → on bloque
+    const safeStock    = product.stock    != null ? Number(product.stock)    : Infinity;
+    const safeCostPrice = product.costPrice != null ? Number(product.costPrice) : 0;
+    const safePrice    = Number(product.price) || 0;
+    const safeMinStock = Number(product.minStock) || 0;
+
     const safeProduct = {
       ...product,
-      price:    Number(product.price)    || 0,
-      costPrice: Number(product.costPrice) || 0,
-      stock:    Number(product.stock)    || 0,
-      minStock: Number(product.minStock) || 0,
-      name:     product.name     ?? 'Produit inconnu',
-      category: product.category ?? '',
+      price:     safePrice,
+      costPrice: safeCostPrice,
+      stock:     safeStock,
+      minStock:  safeMinStock,
+      name:      product.name     ?? 'Produit inconnu',
+      category:  product.category ?? '',
     };
-    if (safeProduct.stock <= 0) return state;
+
+    if (safeProduct.stock <= 0) return state; // bloqué uniquement si épuisé
     const existing = state.cart.find(i => i.product.id === safeProduct.id);
     if (existing) {
-      if (existing.quantity >= safeProduct.stock) return state;
+      if (Number.isFinite(safeProduct.stock) && existing.quantity >= safeProduct.stock) return state;
       return { cart: state.cart.map(i => i.product.id === safeProduct.id ? { ...i, quantity: i.quantity + 1 } : i) };
     }
-    return { cart: [...state.cart, { product: safeProduct, quantity: 1, sellingPrice: safeProduct.price, costPrice: safeProduct.costPrice }] };
+    return { cart: [...state.cart, { product: safeProduct, quantity: 1, sellingPrice: safePrice, costPrice: safeCostPrice }] };
   }),
 
   removeFromCart: (productId) => set(state => ({

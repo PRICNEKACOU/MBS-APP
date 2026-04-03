@@ -13,10 +13,13 @@ export function ProductCard({ product }) {
     setImgError(false);
   }, [product.imageUrl]);
   
-  const stock    = Number(product.stock)    || 0;
-  const minStock = Number(product.minStock) || 0;
-  const isOutOfStock = stock <= 0;
-  const isLowStock   = stock > 0 && stock <= minStock;
+  // stock null/undefined (ex: nouveau compte sans data stock) = non limité (Infinity)
+  const safeStock = product.stock != null ? Number(product.stock) : Infinity;
+  const minStock  = Number(product.minStock) || 0;
+  
+  const isOutOfStock = safeStock <= 0;
+  // n'afficher 'Faible' que si le stock réel est un nombre défini
+  const isLowStock   = Number.isFinite(safeStock) && safeStock > 0 && safeStock <= minStock;
 
   return (
     <div className="group flex flex-col overflow-hidden rounded-2xl bg-slate-900 border border-slate-800 transition-all hover:border-slate-700 hover:shadow-lg hover:shadow-black/50">
