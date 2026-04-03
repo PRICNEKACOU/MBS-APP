@@ -13,8 +13,10 @@ export function ProductCard({ product }) {
     setImgError(false);
   }, [product.imageUrl]);
   
-  const isOutOfStock = product.stock <= 0;
-  const isLowStock = product.stock > 0 && product.stock <= product.minStock;
+  const stock    = Number(product.stock)    || 0;
+  const minStock = Number(product.minStock) || 0;
+  const isOutOfStock = stock <= 0;
+  const isLowStock   = stock > 0 && stock <= minStock;
 
   return (
     <div className="group flex flex-col overflow-hidden rounded-2xl bg-slate-900 border border-slate-800 transition-all hover:border-slate-700 hover:shadow-lg hover:shadow-black/50">

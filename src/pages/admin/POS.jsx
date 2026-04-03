@@ -89,13 +89,13 @@ export function POS() {
     );
   }
 
-  const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    p.category.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredProducts = (products ?? []).filter(p =>
+    (p?.name ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (p?.category ?? '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const cartTotal = cart.reduce((sum, item) => sum + (item.sellingPrice * item.quantity), 0);
-  const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const cartTotal  = (cart ?? []).reduce((sum, item) => sum + (Number(item.sellingPrice) || 0) * (Number(item.quantity) || 0), 0);
+  const totalItems = (cart ?? []).reduce((sum, item) => sum + (Number(item.quantity)     || 0), 0);
 
   const handleCheckout = () => {
     if (cart.length === 0) return;

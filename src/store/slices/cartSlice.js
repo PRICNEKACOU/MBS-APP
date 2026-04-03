@@ -6,13 +6,23 @@ export const createCartSlice = (set, get) => ({
   cart: [],
 
   addToCart: (product) => set(state => {
-    if (product.stock <= 0) return state;
-    const existing = state.cart.find(i => i.product.id === product.id);
+    // Normalisation des types — guard contre les strings venant du formulaire ou d'un mapping partiel
+    const safeProduct = {
+      ...product,
+      price:    Number(product.price)    || 0,
+      costPrice: Number(product.costPrice) || 0,
+      stock:    Number(product.stock)    || 0,
+      minStock: Number(product.minStock) || 0,
+      name:     product.name     ?? 'Produit inconnu',
+      category: product.category ?? '',
+    };
+    if (safeProduct.stock <= 0) return state;
+    const existing = state.cart.find(i => i.product.id === safeProduct.id);
     if (existing) {
-      if (existing.quantity >= product.stock) return state;
-      return { cart: state.cart.map(i => i.product.id === product.id ? { ...i, quantity: i.quantity + 1 } : i) };
+      if (existing.quantity >= safeProduct.stock) return state;
+      return { cart: state.cart.map(i => i.product.id === safeProduct.id ? { ...i, quantity: i.quantity + 1 } : i) };
     }
-    return { cart: [...state.cart, { product, quantity: 1, sellingPrice: product.price, costPrice: product.costPrice ?? 0 }] };
+    return { cart: [...state.cart, { product: safeProduct, quantity: 1, sellingPrice: safeProduct.price, costPrice: safeProduct.costPrice }] };
   }),
 
   removeFromCart: (productId) => set(state => ({
