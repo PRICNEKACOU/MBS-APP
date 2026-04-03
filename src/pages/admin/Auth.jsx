@@ -318,7 +318,19 @@ export const Auth = () => {
       .eq('id', authData.user.id)
       .single();
 
-    if (userError || !userProfile) throw new Error('Profil utilisateur introuvable.');
+    // ── Détection utilisateur orphelin (bms_users manquant) ──────────────────
+    // Cause : un bug RLS antérieur a bloqué l'INSERT lors de l'inscription.
+    // Solution : proposer de recréer le profil sans recréer le compte auth.
+    if (userError || !userProfile) {
+      // On stocke l'email pour que l'UI puisse proposer la récupération
+      setError(
+        'Votre profil restaurant est introuvable. ' +
+        'Veuillez contacter le support ou recréer votre espace via l\'onglet « Inscription ».'
+      );
+      // Déconnexion propre pour éviter un état incohérent
+      await insforge.auth.signOut().catch(() => {});
+      throw new Error('Profil utilisateur introuvable (bms_users).');
+    }
 
     const { data: restaurantData } = await insforge.database
       .from('restaurants')
@@ -338,33 +350,59 @@ export const Auth = () => {
 
   // ── Création du restaurant APRÈS session valide ──────────────────────────────
   const createRestaurantAndProfile = async (userId, { restaurantName: rName, userName: uName, email: uEmail, pin: uPin }) => {
-    // Générer l'ID du restaurant côté client pour éviter le .select() après insert
-    // (.select() déclenche un SELECT soumis au RLS, mais l'utilisateur n'est pas encore dans bms_users)
+    // L'ID est généré côté client pour être connu immédiatement
+    // sans dépendre du RETURNING (soumis au RLS, peut être NULL si policy trop stricte).
     const restaurantId = crypto.randomUUID();
 
+    // ── 1. Insérer le restaurant ─────────────────────────────────────────────
     const { error: restError } = await insforge.database
       .from('restaurants')
       .insert([{ id: restaurantId, nom: rName }]);
 
     if (restError) throw new Error(`Restaurant: ${restError.message}`);
 
-    // Créer le profil bms_users (maintenant get_my_restaurant_id() pourra fonctionner)
-    const { data: newUser, error: userError } = await insforge.database
+    // ── 2. Insérer le profil admin (sans .select() pour éviter le bug RETURNING+RLS) ──
+    // On N'UTILISE PAS .select().single() ici car la policy SELECT (id = auth.uid())
+    // peut retourner null si le cache STABLE de get_my_restaurant_id() n'est pas encore
+    // mis à jour dans la même transaction — l'INSERT réussit mais le RETURNING échoue.
+    const { error: userError } = await insforge.database
       .from('bms_users')
       .insert([{
-        id: userId,
+        id:            userId,
         restaurant_id: restaurantId,
-        nom: uName,
-        email: uEmail,
-        pin_code: uPin,
-        role: 'ADMIN'
-      }])
-      .select()
-      .single();
+        nom:           uName,
+        email:         uEmail,   // colonne ajoutée par migration_fix_final_v2.sql
+        pin_code:      uPin,
+        role:          'ADMIN'
+      }]);
 
     if (userError) throw new Error(`Profil: ${userError.message}`);
 
-    setAuth({ isAuthenticated: true, user: newUser, restaurant: { id: restaurantId, nom: rName } });
+    // ── 3. Re-lire le profil créé (SELECT séparé, hors de l'INSERT) ──────────
+    // On donne une courte pause pour que l'INSERT soit visible (flush du cache STABLE)
+    await new Promise(r => setTimeout(r, 300));
+
+    const { data: newUser, error: readError } = await insforge.database
+      .from('bms_users')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    // Si la re-lecture échoue, on reconstruit un profil minimal depuis les données locales
+    // (l'INSERT a réussi — le profil existe, c'est le RLS SELECT qui peut encore bloquer)
+    const userProfile = newUser || {
+      id:            userId,
+      restaurant_id: restaurantId,
+      nom:           uName,
+      email:         uEmail,
+      role:          'ADMIN'
+    };
+
+    if (!newUser && readError) {
+      console.warn('[createRestaurantAndProfile] SELECT post-insert a échoué (RLS probable), profil minimal utilisé.', readError.message);
+    }
+
+    setAuth({ isAuthenticated: true, user: userProfile, restaurant: { id: restaurantId, nom: rName } });
     await initializeStore();
     navigate('/pos');
   };

@@ -54,7 +54,7 @@ export const useStore = create((set, get) => ({
   ...createOfflineSlice(set, get),
 
   // ─── initializeStore (cross-cutting: loads all data + realtime) ────────────
-  initializeStore: async () => {
+  initializeStore: async (retryAttempt = 0) => {
     if (!get().auth.isAuthenticated) {
       set({ isLoading: false });
       return;
@@ -62,67 +62,70 @@ export const useStore = create((set, get) => ({
 
     const restaurantId = get().auth.restaurant?.id;
     if (!restaurantId) {
-      // Silent return — cas normal pour un nouvel utilisateur ou une session expirée.
-      // Le ProtectedRoute affiche déjà le spinner, aucun toast ne doit apparaître ici.
       set({ isLoading: false });
       return;
     }
 
-    set({ isLoading: true });
-
-    // Helper to catch errors per query
-    const safeQuery = async (queryPromise, fallback = []) => {
-      try {
-        const { data, error } = await queryPromise;
-        if (error) throw error;
-        return data || fallback;
-      } catch (err) {
-        console.error(`Query failed:`, err);
-        return fallback;
-      }
-    };
+    // Assurer que le spinner s'affiche
+    if (retryAttempt === 0) set({ isLoading: true });
 
     try {
+      // 1. FORCER L'ATTENTE DU TOKEN (Résolution Race Condition)
+      // La promesse getSession garantit que le SDK local a hydraté ses headers JWT
+      const { data: sessionData, error: sessionError } = await insforge.auth.getSession();
+      if (sessionError || !sessionData?.session) {
+        throw new Error('Session non complètement propagée.');
+      }
+
+      // 2. Fetch Data (Promises)
       const [
-        products,
-        tables,
-        orders,
-        movements,
-        cycles,
-        expenses,
-        staffData
+        productsRes,
+        tablesRes,
+        ordersRes,
+        movementsRes,
+        cyclesRes,
+        expensesRes,
+        staffRes
       ] = await Promise.all([
-        safeQuery(insforge.database.from('products').select('*').eq('restaurant_id', restaurantId).eq('archived', false)),
-        safeQuery(insforge.database.from('tables').select('*').eq('restaurant_id', restaurantId)),
-        safeQuery(insforge.database.from('orders').select('*').eq('restaurant_id', restaurantId)),
-        safeQuery(insforge.database.from('movements').select('*').eq('restaurant_id', restaurantId)),
-        safeQuery(insforge.database.from('cycles').select('*').eq('restaurant_id', restaurantId)),
-        safeQuery(insforge.database.from('expenses').select('*').eq('restaurant_id', restaurantId)),
-        safeQuery(insforge.database.from('staff').select('*').eq('restaurant_id', restaurantId))
+        insforge.database.from('products').select('*').eq('restaurant_id', restaurantId).eq('archived', false),
+        insforge.database.from('tables').select('*').eq('restaurant_id', restaurantId),
+        insforge.database.from('orders').select('*').eq('restaurant_id', restaurantId),
+        insforge.database.from('movements').select('*').eq('restaurant_id', restaurantId),
+        insforge.database.from('cycles').select('*').eq('restaurant_id', restaurantId),
+        insforge.database.from('expenses').select('*').eq('restaurant_id', restaurantId),
+        insforge.database.from('staff').select('*').eq('restaurant_id', restaurantId)
       ]);
 
-      const mappedProducts  = products.map(p => ({ ...mapFromDb(p, productMapping), costPrice: p.cost_price ?? null }));
-      const mappedOrders    = orders.map(o => mapFromDb(o, orderMapping));
-      const mappedCycles    = cycles.map(c => mapFromDb(c, cycleMapping));
-      const mappedMovements = movements.map(m => mapFromDb(m, movementMapping));
-      const mappedExpenses  = expenses.map(e => mapFromDb(e, expenseMapping));
+      // Regrouper les erreurs éventuelles pour déclencher le retry
+      const errors = [productsRes.error, tablesRes.error, ordersRes.error, movementsRes.error, cyclesRes.error, expensesRes.error, staffRes.error].filter(Boolean);
+      if (errors.length > 0) {
+        throw errors[0]; // On lance la première erreur trouvée pour entrer dans le bloc Catch
+      }
+
+      // 3. Mapping
+      const mappedProducts  = (productsRes.data || []).map(p => ({ ...mapFromDb(p, productMapping), costPrice: p.cost_price ?? null }));
+      const mappedOrders    = (ordersRes.data || []).map(o => mapFromDb(o, orderMapping));
+      const mappedCycles    = (cyclesRes.data || []).map(c => mapFromDb(c, cycleMapping));
+      const mappedMovements = (movementsRes.data || []).map(m => mapFromDb(m, movementMapping));
+      const mappedExpenses  = (expensesRes.data || []).map(e => mapFromDb(e, expenseMapping));
 
       const savedQueue = await getAllOffline().catch(() => []);
 
+      // 4. Update state success
       set({
         products: mappedProducts,
-        tables: tables.length > 0 ? tables : mockTables,
+        tables: (tablesRes.data?.length > 0) ? tablesRes.data : mockTables,
         orders: mappedOrders,
         movements: mappedMovements,
         cycles: mappedCycles,
         currentCycle: mappedCycles.find(c => !c.endTime) || null,
         expenses: mappedExpenses,
-        staff: staffData || [],
+        staff: staffRes.data || [],
         offlineQueue: savedQueue,
         isLoading: false
       });
 
-      // Real-time sync with exponential backoff retry
+      // 5. Connect Realtime
       const connected = await connectRealtimeWithRetry();
       if (!connected) {
         console.warn('Real-time sync disabled (all retries exhausted).');
@@ -161,16 +164,22 @@ export const useStore = create((set, get) => ({
       });
 
     } catch (err) {
-      console.error('Failed to initialize store:', err);
-      // Silent return si la cause est un restaurant_id absent (RLS block au démarrage)
-      // On ne montre PAS de toast — le ProtectedRoute gère déjà ce cas visuellement
-      const isRlsBlock = err?.code === 'PGRST301'
-        || err?.code === '42501'
-        || err?.message?.toLowerCase().includes('rls')
-        || err?.message?.toLowerCase().includes('row-level')
-        || !get().auth.restaurant?.id;  // si restaurant_id est null, c'est normal
+      console.error(`Failed to initialize store (Attempt ${retryAttempt + 1}):`, err);
+      
+      const isConfigError = err?.code === 'PGRST301' || err?.message?.toLowerCase().includes('rls') || err?.message?.toLowerCase().includes('session non');
 
-      if (!isRlsBlock) {
+      // LOGIQUE DE RETRY SI ERREUR TEMPORAIRE / RACE CONDITION
+      const MAX_RETRIES = 3;
+      if (retryAttempt < MAX_RETRIES) {
+        console.warn(`Nouvelle tentative dans 1s... (${retryAttempt + 1}/${MAX_RETRIES})`);
+        setTimeout(() => {
+          get().initializeStore(retryAttempt + 1);
+        }, 1000);
+        return; // Ne pas afficher l'erreur ni casser le chargement
+      }
+
+      // Si toutes les tentatives échouent :
+      if (!isConfigError) {
         toast.error("Échec du chargement des données. Veuillez rafraîchir.");
       }
       set({ isLoading: false });

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Search, ShoppingCart, X, Plus, Minus, Trash2, Printer, Image, Lock, Edit2, Check, Power } from "lucide-react";
+import { Search, ShoppingCart, X, Plus, Minus, Trash2, Printer, Image, Lock, Edit2, Check, Power, Loader2 } from "lucide-react";
 import { useStore } from "../../store/store";
 import { formatPrice } from "../../utils/currency";
 import { Button } from "../../components/ui/Button";
@@ -46,6 +46,8 @@ export function POS() {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [editingPriceId, setEditingPriceId] = useState(null);
   const [tempPrice, setTempPrice] = useState("");
+  // État de chargement pendant la finalisation de la vente
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
 
   // staffExists : null pendant le chargement initial du store, boolean ensuite
   const staffExists = isLoading ? null : staff.length > 0;
@@ -103,21 +105,39 @@ export function POS() {
     setIsPaymentModalOpen(true);
   };
 
-  const processFinalCheckout = (paymentMethod) => {
-    const newOrder = {
-      items: [...cart],
-      total: cartTotal,
-      table: selectedTable,
-      paymentMethod: paymentMethod,
-      id: Math.floor(Math.random() * 10000).toString().padStart(4, '0'),
-      date: new Date()
-    };
+  // ── Finalisation de vente ─────────────────────────────────────────────────
+  // FIX : async + await checkout() + receipt basé sur le vrai ordre DB
+  //        Le reçu n'est affiché QUE si la vente est confirmée en base.
+  //        En cas d'échec, le panier est restauré (rollback dans cartSlice).
+  const processFinalCheckout = async (paymentMethod) => {
+    // Snapshot des données du panier AVANT le checkout (pour construire le reçu)
+    const cartSnapshot = cart.map(i => ({ ...i }));
+    const totalSnapshot = cartTotal;
+    const tableSnapshot = selectedTable;
 
-    checkout(Number(selectedTable) || null, paymentMethod);
-    setIsCartOpen(false);
-    setSelectedTable("");
-    setIsPaymentModalOpen(false);
-    setReceiptOrder(newOrder);
+    setIsCheckingOut(true);
+    setIsPaymentModalOpen(false); // Fermer le modal de paiement immédiatement
+
+    try {
+      const result = await checkout(Number(selectedTable) || null, paymentMethod);
+
+      if (result?.success && result?.order) {
+        // ── Vente confirmée en DB — afficher le reçu avec les données réelles ──
+        setReceiptOrder({
+          id:            result.order.id,       // ID réel sauvegardé en DB (ex: ORD-XXXXXX)
+          items:         cartSnapshot,           // Articles (snapshot pré-checkout)
+          total:         totalSnapshot,
+          table:         tableSnapshot,
+          paymentMethod: paymentMethod,
+          date:          new Date(result.order.timestamp)
+        });
+        setIsCartOpen(false);
+        setSelectedTable("");
+      }
+      // En cas d'échec, le panier est restauré par cartSlice → pas besoin d'action ici
+    } finally {
+      setIsCheckingOut(false);
+    }
   };
 
   return (
@@ -303,15 +323,18 @@ export function POS() {
             <span className="text-2xl font-bold text-amber-500">{formatPrice(cartTotal, currency)}</span>
           </div>
           
-          <Button 
-            variant="primary" 
-            size="lg" 
+          <Button
+            variant="primary"
+            size="lg"
             className="w-full relative overflow-hidden group py-4 text-lg font-bold"
-            disabled={cart.length === 0}
+            disabled={cart.length === 0 || isCheckingOut}
             onClick={handleCheckout}
           >
             <span className="relative z-10 flex items-center justify-center gap-2">
-              <Printer className="h-5 w-5" /> {t('pos.checkout')}
+              {isCheckingOut
+                ? <><Loader2 className="h-5 w-5 animate-spin" /> Enregistrement...</>
+                : <><Printer className="h-5 w-5" /> {t('pos.checkout')}</>
+              }
             </span>
             <div className="absolute inset-0 bg-amber-400 transform scale-x-0 group-hover:scale-x-100 transition-transform origin-left rounded-lg duration-300" />
           </Button>
@@ -341,22 +364,27 @@ export function POS() {
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-md shadow-2xl animate-in fade-in zoom-in-95">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-slate-100 uppercase tracking-wider">Mode de Paiement</h3>
-              <button onClick={() => setIsPaymentModalOpen(false)} className="text-slate-500 hover:text-white transition-colors">
+              <button
+                onClick={() => setIsPaymentModalOpen(false)}
+                disabled={isCheckingOut}
+                className="text-slate-500 hover:text-white transition-colors disabled:opacity-40"
+              >
                 <X className="h-6 w-6" />
               </button>
             </div>
-            
+
             <div className="grid grid-cols-1 gap-3">
               {[
-                { id: 'Espèces', color: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20 hover:bg-emerald-500/20' },
-                { id: 'Mobile Money', color: 'bg-amber-500/10 text-amber-500 border-amber-500/20 hover:bg-amber-500/20' },
-                { id: 'Carte Bancaire', color: 'bg-blue-500/10 text-blue-500 border-blue-500/20 hover:bg-blue-500/20' }
+                { id: 'Espèces',       color: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20 hover:bg-emerald-500/20' },
+                { id: 'Mobile Money',  color: 'bg-amber-500/10  text-amber-500  border-amber-500/20  hover:bg-amber-500/20'  },
+                { id: 'Carte Bancaire',color: 'bg-blue-500/10   text-blue-500   border-blue-500/20   hover:bg-blue-500/20'   }
               ].map((method) => (
                 <button
                   key={method.id}
                   onClick={() => processFinalCheckout(method.id)}
+                  disabled={isCheckingOut}
                   className={cn(
-                    "flex items-center justify-between p-5 rounded-2xl border transition-all text-lg font-bold group active:scale-95",
+                    "flex items-center justify-between p-5 rounded-2xl border transition-all text-lg font-bold group active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed",
                     method.color
                   )}
                 >
@@ -372,6 +400,17 @@ export function POS() {
               <span className="text-slate-400 font-medium">Total à payer</span>
               <span className="text-2xl font-black text-white">{formatPrice(cartTotal, currency)}</span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* OVERLAY DE CHARGEMENT PENDANT LE CHECKOUT */}
+      {isCheckingOut && (
+        <div className="fixed inset-0 z-[115] flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 flex flex-col items-center gap-4 shadow-2xl">
+            <Loader2 className="w-10 h-10 text-amber-500 animate-spin" />
+            <p className="text-slate-100 font-semibold text-lg">Enregistrement en cours...</p>
+            <p className="text-slate-400 text-sm">Veuillez patienter</p>
           </div>
         </div>
       )}

@@ -51,11 +51,24 @@ export const createCartSlice = (set, get) => ({
 
   clearCart: () => set({ cart: [] }),
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // checkout() — Finalisation de vente atomique
+  //
+  // Retourne un objet { success: boolean, order } pour permettre à l'appelant
+  // (POS.jsx) de savoir si la vente a réussi AVANT d'afficher le reçu.
+  //
+  // FIXES :
+  //  - cart inclus dans previousState → panier restauré en cas d'échec DB
+  //  - retour d'un signal succès/échec clair (au lieu de void)
+  //  - toast.error propre (fin du mode DEBUG)
+  //  - l'ordre retourné contient l'ID réel sauvegardé en DB
+  // ─────────────────────────────────────────────────────────────────────────────
   checkout: async (tableNumber, paymentMethod = 'Espèces') => {
     const { cart, products, currentCycle, orders, tables, movements, auth } = get();
-    if (!cart.length) return;
+    if (!cart.length) return { success: false, order: null };
 
-    const previousState = { orders, products, tables, movements };
+    // ── Snapshot complet incluant le panier (pour rollback propre) ────────────
+    const previousState = { orders, products, tables, movements, cart };
 
     try {
       const restaurantId = auth.restaurant?.id;
@@ -74,8 +87,11 @@ export const createCartSlice = (set, get) => ({
         return { ...p, stock: Math.max(0, currentStock - cartItem.quantity) };
       });
 
+      // ID réel utilisé en DB (format cohérent)
+      const orderId = 'ORD-' + Math.random().toString(36).substr(2, 6).toUpperCase();
+
       const newOrder = {
-        id: 'ORD-' + Math.random().toString(36).substr(2, 6).toUpperCase(),
+        id: orderId,
         items: itemsForOrder,
         total: cart.reduce((s, i) => s + i.sellingPrice * i.quantity, 0),
         tableNumber,
@@ -96,43 +112,73 @@ export const createCartSlice = (set, get) => ({
         productName: item.product.name,
         type: 'OUT',
         quantity: item.quantity,
-        reason: `Vente - ${newOrder.id}`,
+        reason: `Vente - ${orderId}`,
         date: new Date().toISOString(),
         cycleId: currentCycle?.id || null,
         restaurant_id: restaurantId
       }));
 
-      set({ orders: [newOrder, ...orders], products: updatedProducts, tables: updatedTables, movements: [...newMovements, ...movements], cart: [] });
+      // ── Mise à jour optimiste du store ─────────────────────────────────────
+      set({
+        orders: [newOrder, ...orders],
+        products: updatedProducts,
+        tables: updatedTables,
+        movements: [...newMovements, ...movements],
+        cart: []
+      });
 
+      // ── Persistance DB ─────────────────────────────────────────────────────
       if (!navigator.onLine) {
         const stockUpdates = updatedProducts
           .filter(p => cart.find(i => i.product.id === p.id))
           .map(p => ({ id: p.id, stock: p.stock }));
-        await get().addToOfflineQueue({ type: 'order', order: newOrder, stockUpdates, movements: newMovements, tableUpdate: tableNumber || null });
-        toast.success("Vente sauvegardée hors-ligne !");
-      } else {
-        const { error: rpcError } = await insforge.database.rpc('checkout_atomic', {
-          p_order_id:       newOrder.id,
-          p_items:          newOrder.items,
-          p_total:          newOrder.total,
-          p_table_number:   tableNumber || null,
-          p_payment_method: newOrder.paymentMethod,
-          p_status:         newOrder.status,
-          p_timestamp:      newOrder.timestamp,
-          p_cycle_id:       newOrder.cycleId || '',
-          p_restaurant_id:  restaurantId,
-          p_stock_updates:  updatedProducts
-            .filter(p => cart.find(i => i.product.id === p.id))
-            .map(p => ({ id: p.id, stock: p.stock })),
-          p_movements:      newMovements.map(m => mapToDb(m, movementMapping))
+        await get().addToOfflineQueue({
+          type: 'order',
+          order: newOrder,
+          stockUpdates,
+          movements: newMovements,
+          tableUpdate: tableNumber || null
         });
-        if (rpcError) throw rpcError;
-        toast.success("Vente enregistrée !");
+        toast.success("Vente sauvegardée hors-ligne !");
+        return { success: true, order: newOrder };
       }
+
+      const { error: rpcError } = await insforge.database.rpc('checkout_atomic', {
+        p_order_id:       newOrder.id,
+        p_items:          newOrder.items,
+        p_total:          newOrder.total,
+        p_table_number:   tableNumber || null,
+        p_payment_method: newOrder.paymentMethod,
+        p_status:         newOrder.status,
+        p_timestamp:      newOrder.timestamp,
+        p_cycle_id:       newOrder.cycleId || '',
+        p_restaurant_id:  restaurantId,
+        p_stock_updates:  updatedProducts
+          .filter(p => cart.find(i => i.product.id === p.id))
+          .map(p => ({ id: p.id, stock: p.stock })),
+        p_movements:      newMovements.map(m => mapToDb(m, movementMapping))
+      });
+
+      if (rpcError) throw rpcError;
+
+      toast.success("Vente enregistrée !");
+      return { success: true, order: newOrder };
+
     } catch (err) {
-      console.error("[Checkout] Erreur brute :", err);
-      toast.error("DEBUG: " + JSON.stringify(err, Object.getOwnPropertyNames(err)));
+      console.error("[Checkout] Erreur :", err);
+
+      // Rollback complet — panier restauré pour ne pas perdre la commande
       set(previousState);
+
+      // Message utilisateur lisible (fin du mode DEBUG)
+      const userMsg = err?.message?.includes('restaurant_id mismatch')
+        ? "Erreur d'autorisation : profil non lié au restaurant. Contactez le support."
+        : err?.message?.includes('ID Restaurant manquant')
+        ? "Session expirée. Veuillez vous reconnecter."
+        : "Échec de l'enregistrement. Vérifiez votre connexion et réessayez.";
+
+      toast.error(userMsg);
+      return { success: false, order: null };
     }
   },
 });
