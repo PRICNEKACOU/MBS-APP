@@ -36,6 +36,7 @@ export function POS() {
   const lockScreen  = useStore(state => state.lockScreen);
   const staff       = useStore(state => state.staff);
   const isLoading   = useStore(state => state.isLoading);
+  const auth        = useStore(state => state.auth);
 
   // ── Tous les useState AVANT les retours conditionnels (règle des hooks) ───
   const [searchTerm, setSearchTerm] = useState("");
@@ -392,7 +393,7 @@ export function POS() {
               <div id="printable-receipt" className="font-mono text-sm leading-tight text-black bg-white shadow-sm w-[300px] shrink-0 p-4" style={{ fontFamily: "'Courier New', Courier, monospace" }}>
 
                 <div className="text-center mb-2">
-                  <h1 className="font-bold text-lg uppercase mb-1">{restaurant?.nom || 'MBS APP'}</h1>
+                  <h1 className="font-bold text-lg uppercase mb-1">{auth?.restaurant?.nom || 'MBS APP'}</h1>
                   <p className="text-[10px]">
                     {receiptOrder.date.toLocaleDateString('fr-FR')} - {receiptOrder.date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                   </p>
