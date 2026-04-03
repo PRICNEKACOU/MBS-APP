@@ -36,12 +36,9 @@ async function connectRealtimeWithRetry(attempt = 0) {
 }
 
 export const useStore = create((set, get) => ({
-  isLoading: (() => {
-    try {
-      const stored = localStorage.getItem('mbs_auth');
-      return stored ? JSON.parse(stored).isAuthenticated : false;
-    } catch { return false; }
-  })(),
+  // isLoading est géré exclusivement par authSlice (évite la double déclaration)
+  // La valeur initiale est définie dans createAuthSlice selon savedAuth.isAuthenticated
+
   isSyncing: false,
   language: 'fr',
   setLanguage: (language) => set({ language }),
@@ -65,7 +62,8 @@ export const useStore = create((set, get) => ({
 
     const restaurantId = get().auth.restaurant?.id;
     if (!restaurantId) {
-      console.error("InitializeStore: No restaurantId found.");
+      // Silent return — cas normal pour un nouvel utilisateur ou une session expirée.
+      // Le ProtectedRoute affiche déjà le spinner, aucun toast ne doit apparaître ici.
       set({ isLoading: false });
       return;
     }
@@ -164,7 +162,17 @@ export const useStore = create((set, get) => ({
 
     } catch (err) {
       console.error('Failed to initialize store:', err);
-      toast.error("Échec du chargement sélectif des données.");
+      // Silent return si la cause est un restaurant_id absent (RLS block au démarrage)
+      // On ne montre PAS de toast — le ProtectedRoute gère déjà ce cas visuellement
+      const isRlsBlock = err?.code === 'PGRST301'
+        || err?.code === '42501'
+        || err?.message?.toLowerCase().includes('rls')
+        || err?.message?.toLowerCase().includes('row-level')
+        || !get().auth.restaurant?.id;  // si restaurant_id est null, c'est normal
+
+      if (!isRlsBlock) {
+        toast.error("Échec du chargement des données. Veuillez rafraîchir.");
+      }
       set({ isLoading: false });
     }
   },
