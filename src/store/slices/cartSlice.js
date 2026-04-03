@@ -130,8 +130,8 @@ export const createCartSlice = (set, get) => ({
         toast.success("Vente enregistrée !");
       }
     } catch (err) {
-      console.error("[Checkout] Erreur :", err);
-      toast.error("Échec de la vente. Veuillez réessayer.");
+      console.error("[Checkout] Erreur brute :", err);
+      toast.error("DEBUG: " + JSON.stringify(err, Object.getOwnPropertyNames(err)));
       set(previousState);
     }
   },
