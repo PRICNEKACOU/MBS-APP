@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Search, ShoppingCart, X, Plus, Minus, Trash2, Printer, Image, Lock, Edit2, Check, Power } from "lucide-react";
 import { useStore } from "../../store/store";
 import { formatPrice } from "../../utils/currency";
@@ -17,7 +17,7 @@ function CartImage({ src, alt, className }) {
     setError(false);
   }, [src]);
 
-  if (error || !src || src.trim() === '') {
+  if (error || !src || typeof src !== 'string' || src.trim() === '') {
     return (
       <div className={cn("flex items-center justify-center bg-slate-800 text-slate-500", className)}>
         <Image className="w-1/2 h-1/2 opacity-50" />
