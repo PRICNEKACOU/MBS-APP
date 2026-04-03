@@ -14,8 +14,19 @@ export const createInventorySlice = (set, get) => ({
       if (!restaurantId) throw new Error("ID Restaurant manquant.");
 
       const newId = 'PRD-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4);
-      const { unitCost, ...cleanInfo } = productInfo;
-      const newProduct = { ...cleanInfo, id: newId, archived: false, costPrice: productInfo.costPrice ?? 0, restaurant_id: restaurantId };
+      // Normalisation stricte des types – évite les comparaisons string-number dans le rendu
+      const newProduct = {
+        id: newId,
+        archived: false,
+        name: productInfo.name ?? '',
+        category: productInfo.category ?? 'Cocktails',
+        price: Number(productInfo.price) || 0,
+        costPrice: Number(productInfo.costPrice) || 0,
+        stock: Number(productInfo.stock) || 20,
+        minStock: Number(productInfo.minStock) || 5,
+        imageUrl: productInfo.imageUrl ?? '',
+        restaurant_id: restaurantId
+      };
 
       const newMovement = productInfo.stock > 0 ? {
         id: 'MOV-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4).toUpperCase(),

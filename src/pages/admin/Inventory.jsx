@@ -110,8 +110,8 @@ export function Inventory() {
       }));
 
   const filteredProducts = computedProducts.filter(p =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.category.toLowerCase().includes(searchTerm.toLowerCase())
+    (p.name ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (p.category ?? '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   // ─── Movements filter (date range, all types) ──────────────────────────────
@@ -125,6 +125,11 @@ export function Inventory() {
 
   // ─── Handlers ──────────────────────────────────────────────────────────────
   const handleOpenAdd = () => {
+    console.log('[Inventory] Ouverture modal ajout — store snapshot:', {
+      restaurantId: useStore.getState().auth?.restaurant?.id,
+      productsCount: useStore.getState().products?.length,
+      isLoading: useStore.getState().isLoading,
+    });
     setEditingProduct(null);
     setFormData({ name: '', category: 'Cocktails', price: '', costPrice: '', stock: '20', minStock: 5, imageUrl: '' });
     setIsModalOpen(true);
